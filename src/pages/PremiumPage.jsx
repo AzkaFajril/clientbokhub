@@ -88,6 +88,10 @@ export default function PremiumPage() {
   }, []);
 
   const claim = async () => {
+    // ===== PENGAMBILAN DITUTUP SEMENTARA =====
+    // Untuk membuka lagi: hapus tanda // di depan "return;" di bawah (atau hapus barisnya).
+    return;
+    // eslint-disable-next-line no-unreachable
     setLoading(true);
     setError('');
     try {
@@ -159,10 +163,16 @@ export default function PremiumPage() {
         {/* KLAIM */}
         <section className="mt-12 max-w-2xl mx-auto">
           <h2 className="text-xl font-semibold mb-1 text-center">Pilih paket</h2>
+
+          {/* ===== TEKS ASLI (aktifkan lagi dengan menggantinya dengan teks "ditutup" di bawah) =====
           <p className="text-sm text-gray-400 mb-6 text-center">
             {freeMode
               ? 'Selama masa pembukaan, semua paket gratis. Cukup isi nama Anda.'
               : 'Pembayaran belum tersedia. Segera hadir.'}
+          </p>
+          */}
+          <p className="text-sm text-gray-400 mb-6 text-center">
+            Pengambilan premium sedang ditutup sementara. Segera hadir.
           </p>
 
           <div className="grid sm:grid-cols-3 gap-3 mb-6">
@@ -194,8 +204,11 @@ export default function PremiumPage() {
                   </div>
                   <p className="text-xs text-gray-400 mb-3">{p.note}</p>
                   <div className="flex items-baseline gap-2">
+                    {/* ===== LABEL ASLI =====
                     <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Gratis</span>
                     <span className="text-[11px] text-gray-500">harga resmi menyusul</span>
+                    */}
+                    <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Segera hadir</span>
                   </div>
                 </button>
               );
@@ -217,6 +230,7 @@ export default function PremiumPage() {
             <div className="mb-4 text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>
           )}
 
+          {/* ===== TOMBOL ASLI (aktifkan lagi dengan membuka comment ini dan menghapus tombol "Belum tersedia") =====
           <button
             onClick={claim}
             disabled={loading || !nameOk || !freeMode}
@@ -225,6 +239,15 @@ export default function PremiumPage() {
           >
             <BoltIcon className="w-4 h-4" />
             {loading ? 'Memproses...' : `Dapatkan ${PLAN_LABEL[plan]} sekarang`}
+          </button>
+          */}
+          <button
+            disabled
+            className="w-full flex items-center justify-center gap-2 text-black font-semibold py-3 rounded-lg text-sm opacity-50 cursor-not-allowed"
+            style={{ background: GOLD }}
+          >
+            <LockIcon className="w-4 h-4" />
+            Belum tersedia
           </button>
         </section>
 
