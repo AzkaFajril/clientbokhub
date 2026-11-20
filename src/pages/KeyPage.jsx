@@ -10,6 +10,13 @@ const DISCORD_DURATION = 24; // hanya kunci 24 jam yang punya step Join Discord 
 const DISCORD_WAIT = 20; // detik menunggu sebelum Discord terbuka & dianggap selesai
 const hasDiscordStep = (hours) => Number(hours) === DISCORD_DURATION;
 
+// Provider yang sudah aktif di backend. Tambahkan 'Work.ink' di sini kalau backend-nya sudah siap.
+const PROVIDERS = [
+  { id: 'LootLabs', available: true },
+  { id: 'Work.ink', available: false },
+];
+const AVAILABLE_PROVIDERS = PROVIDERS.filter((p) => p.available).map((p) => p.id);
+
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* abaikan */ } },
@@ -27,6 +34,9 @@ const getClientId = () => {
 };
 const CLIENT_ID = getClientId();
 const headers = { 'Content-Type': 'application/json', 'x-client-id': CLIENT_ID };
+
+// sembunyikan angka di tengah key sampai key benar-benar siap dipakai
+const maskKey = (k) => String(k).replace(/-(\d+)-/, (_, d) => `-${'•'.repeat(d.length)}-`);
 
 /* ---------- Icons ---------- */
 const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
@@ -209,18 +219,21 @@ function CheckpointPlan({ total, completed = 0, provider, allDone = false, disco
 function ProviderPicker({ provider, onChange }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      {['LootLabs', 'Work.ink'].map((p) => (
+      {PROVIDERS.map(({ id: p, available }) => (
         <button
           key={p}
-          onClick={() => onChange(p)}
+          onClick={() => available && onChange(p)}
+          disabled={!available}
+          title={available ? '' : 'Segera hadir'}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm transition-colors ${
             provider === p
               ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white'
               : 'border-white/10 text-gray-400 hover:border-white/30'
-          }`}
+          } ${available ? '' : 'opacity-50 cursor-not-allowed hover:border-white/10'}`}
         >
           <ProviderIcon type={p} />
           {p}
+          {!available && <span className="text-[10px] text-gray-500">Segera</span>}
         </button>
       ))}
     </div>
@@ -240,7 +253,10 @@ const PrimaryButton = ({ children, ...props }) => (
 export default function KeyPage() {
   const [tab, setTab] = useState('get');
   const [duration, setDuration] = useState(24);
-  const [provider, setProvider] = useState(store.get('bokhub_provider') || 'LootLabs');
+  const [provider, setProvider] = useState(() => {
+    const saved = store.get('bokhub_provider');
+    return AVAILABLE_PROVIDERS.includes(saved) ? saved : AVAILABLE_PROVIDERS[0];
+  });
   const [keys, setKeys] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -286,7 +302,7 @@ export default function KeyPage() {
     if (!res.ok) throw new Error(data.error || 'Gagal memuat kunci');
 
     // Kunci yang sudah siap ditaruh paling bawah
-    const sorted = [...data.keys].sort((a, b) => {
+    const sorted = [...(data.keys || [])].sort((a, b) => {
       if (a.status === 'ready' && b.status !== 'ready') return 1;
       if (a.status !== 'ready' && b.status === 'ready') return -1;
       return new Date(b.createdAt) - new Date(a.createdAt);
@@ -315,7 +331,7 @@ export default function KeyPage() {
         if (success === 'true' && urlKey && token) {
           setTab('mine');
           try {
-            const res = await fetch(`${API}/keys/${urlKey}/checkpoint`, {
+            const res = await fetch(`${API}/keys/${encodeURIComponent(urlKey)}/checkpoint`, {
               method: 'POST',
               headers,
               body: JSON.stringify({ token }),
@@ -377,12 +393,12 @@ export default function KeyPage() {
         headers,
         body: JSON.stringify({ durationHours: Number(duration) }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal membuat kunci');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Gagal membuat kunci (${res.status})`);
       store.set('bokhub_provider', provider);
       await loadKeys(data.key);
       setTab('mine');
-      showToast('Kunci berhasil dibuat!');
+      showToast('Kunci dibuat. Selesaikan checkpoint untuk membukanya.');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -395,7 +411,7 @@ export default function KeyPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API}/keys/${deleteTarget}`, { method: 'DELETE', headers });
+      const res = await fetch(`${API}/keys/${encodeURIComponent(deleteTarget)}`, { method: 'DELETE', headers });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Gagal menghapus kunci');
@@ -415,19 +431,22 @@ export default function KeyPage() {
     setLoading(true);
     setError('');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(`${API}/keys/${keyString}/redirect`, {
+      const res = await fetch(`${API}/keys/${encodeURIComponent(keyString)}/redirect`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ provider }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok || !data.redirectUrl) throw new Error(data.error || 'Gagal mendapatkan link redirect');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.redirectUrl) {
+        throw new Error(data.error || `Gagal mendapatkan link checkpoint (${res.status})`);
+      }
       window.location.href = data.redirectUrl;
     } catch (e) {
+      clearTimeout(timeoutId);
       if (e.name === 'AbortError') setError('Koneksi terlalu lama. Coba lagi.');
       else setError(e.message);
       setLoading(false);
@@ -445,7 +464,7 @@ export default function KeyPage() {
         const res = await fetch(`${API}/keys/${encodeURIComponent(value)}/status`, { headers });
         if (res.ok) info = await res.json();
       } catch (err) {
-        console.warn("Gagal cek ke server", err);
+        console.warn('Gagal cek ke server', err);
       }
 
       const mine = keys.find((k) => k.key === value);
@@ -456,7 +475,7 @@ export default function KeyPage() {
       } else {
         const expired = info.expiresAt && new Date(info.expiresAt) < new Date();
         const isReady = info.status === 'ready' || info.checkpointsCompleted >= info.checkpointsRequired;
-        
+
         setCheckResult({
           found: true,
           key: value,
@@ -465,7 +484,8 @@ export default function KeyPage() {
           expiresAt: info.expiresAt,
           done: info.checkpointsCompleted || 0,
           total: info.checkpointsRequired || 1,
-          hwid: info.hwid || null, // TAMBAHKAN BARIS INI
+          devices: info.deviceCount ?? (info.hwidLocked ? 1 : 0),
+          maxDevices: info.maxDevices ?? 1,
         });
       }
     } catch (e) {
@@ -499,6 +519,7 @@ export default function KeyPage() {
   const percent = Math.round((currentProgress.done / currentProgress.total) * 100);
   const canCreate = keys.length < MAX_KEYS;
   const previewTotal = durations.indexOf(Number(duration)) + 1;
+  const deviceText = (n, max) => `${n}/${max === 0 ? '∞' : max} perangkat`;
 
   return (
     <div className="min-h-screen bg-[#060b10] text-white">
@@ -514,7 +535,7 @@ export default function KeyPage() {
           <div className="bg-[#0d1319] border border-white/10 rounded-xl p-5 w-full max-w-sm">
             <h3 className="text-sm font-semibold mb-2">Hapus kunci?</h3>
             <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-              Kunci <span className="font-mono text-white bg-white/10 px-1 py-0.5 rounded break-all">{deleteTarget}</span>{' '}
+              Kunci <span className="font-mono text-white bg-white/10 px-1 py-0.5 rounded break-all">{maskKey(deleteTarget)}</span>{' '}
               akan dihapus permanen dan kuota Anda kembali.
             </p>
             <div className="flex gap-2 justify-end">
@@ -588,7 +609,7 @@ export default function KeyPage() {
                               {isReady ? <CheckIcon className="w-3.5 h-3.5" /> : `${prog.done}/${prog.total}`}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <p className={`font-mono text-[11px] break-all ${isReady ? 'text-white' : 'text-gray-400'}`}>{k.key}</p>
+                              <p className={`font-mono text-[11px] break-all ${isReady ? 'text-white' : 'text-gray-400'}`}>{isReady ? k.key : maskKey(k.key)}</p>
                               <p className="text-[10px] text-gray-500 mt-0.5">{k.durationHours} jam · s/d {formatExpiry(k.expiresAt)}</p>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
@@ -617,6 +638,7 @@ export default function KeyPage() {
                               <button onClick={() => copy(current.key, 'key')} className="shrink-0 text-[11px] text-gray-200 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded transition-colors">{copied === 'key' ? 'Tersalin ✓' : 'Salin'}</button>
                             </div>
                             <p className="text-[11px] text-gray-400 mt-2">Berlaku sampai {formatExpiry(current.expiresAt)}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">Perangkat terpakai: {deviceText(current.deviceCount ?? 0, current.maxDevices ?? 1)}</p>
                           </div>
                         )}
 
@@ -642,7 +664,7 @@ export default function KeyPage() {
               </div>
             )}
 
-            {/* CHECK KEY (Sudah Ditambahkan HWID) */}
+            {/* CHECK KEY */}
             {tab === 'check' && (
               <div>
                 <h1 className="text-3xl font-bold mb-2">Cek kunci</h1>
@@ -665,7 +687,7 @@ export default function KeyPage() {
                     <p className="text-sm font-semibold mb-3">
                       {checkResult.status === 'expired' ? '❌ Kunci Kedaluwarsa' : checkResult.status === 'ready' ? '✅ Kunci Valid & Siap Dipakai' : '⏳ Kunci Belum Selesai Checkpoint'}
                     </p>
-                    <p className="font-mono text-xs text-white break-all mb-3">{checkResult.key}</p>
+                    <p className="font-mono text-xs text-white break-all mb-3">{checkResult.status === 'ready' ? checkResult.key : maskKey(checkResult.key)}</p>
                     <dl className="grid grid-cols-2 gap-y-2 text-xs">
                       {checkResult.durationHours != null && (
                         <><dt className="text-gray-400">Durasi</dt><dd className="text-white text-right">{checkResult.durationHours} jam</dd></>
@@ -676,12 +698,13 @@ export default function KeyPage() {
                       {checkResult.total != null && checkResult.status !== 'expired' && (
                         <><dt className="text-gray-400">Checkpoint</dt><dd className="text-white text-right">{checkResult.done}/{checkResult.total}</dd></>
                       )}
-                      {/* TAMBAHAN STATUS HWID */}
                       {checkResult.status !== 'expired' && (
                         <>
-                          <dt className="text-gray-400">Status HWID</dt>
-                          <dd className={`text-right font-semibold ${checkResult.hwid ? 'text-[#8bff5e]' : 'text-amber-300'}`}>
-                            {checkResult.hwid ? 'Terkunci (1 Device)' : 'Belum Terkunci'}
+                          <dt className="text-gray-400">Perangkat (HWID)</dt>
+                          <dd className={`text-right font-semibold ${checkResult.devices > 0 ? 'text-[#8bff5e]' : 'text-amber-300'}`}>
+                            {checkResult.devices > 0
+                              ? deviceText(checkResult.devices, checkResult.maxDevices)
+                              : `Belum terkunci (maks ${checkResult.maxDevices === 0 ? '∞' : checkResult.maxDevices})`}
                           </dd>
                         </>
                       )}
