@@ -2,21 +2,30 @@ import { useState, useEffect, useCallback } from 'react';
 import { getClientId } from '../utils/clientId';
 import { API } from '../utils/api';
 
+const LIFETIME_HOURS = 9999999;
+const EMPTY_KEY = { keyString: '', durationHours: 24, type: 'premium', maxDevices: 1 };
+
 export default function AdminPage() {
   const [token, setToken] = useState(localStorage.getItem('adminToken') || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  
+
   const [stats, setStats] = useState(null);
   const [keys, setKeys] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
-  
-  // State Modal & Loading
+
   const [showModal, setShowModal] = useState(false);
-  const [newKey, setNewKey] = useState({ keyString: '', durationHours: 24, type: 'premium' });
+  const [newKey, setNewKey] = useState(EMPTY_KEY);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('adminToken');
+    setToken('');
+    setStats(null);
+    setKeys([]);
+  }, []);
 
   const apiFetch = useCallback(async (path, options = {}) => {
     const res = await fetch(`${API}${path}`, {
@@ -35,7 +44,7 @@ export default function AdminPage() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request gagal');
     return data;
-  }, [token]);
+  }, [token, handleLogout]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -55,25 +64,17 @@ export default function AdminPage() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    setToken('');
-    setStats(null);
-    setKeys([]);
-  };
-
   const loadStats = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch('/admin/stats');
-      setStats(data);
+      setStats(await apiFetch('/admin/stats'));
     } catch (err) { console.error(err); }
   }, [token, apiFetch]);
 
   const loadKeys = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch(`/admin/keys?page=${page}&limit=10&search=${search}`);
+      const data = await apiFetch(`/admin/keys?page=${page}&limit=10&search=${encodeURIComponent(search)}`);
       setKeys(data.keys);
       setTotalPages(data.totalPages);
     } catch (err) { console.error(err); }
@@ -86,23 +87,22 @@ export default function AdminPage() {
     }
   }, [token, loadStats, loadKeys]);
 
-   const handleAddKey = async (e) => {
+  const handleAddKey = async (e) => {
     e.preventDefault();
     if (isSubmitting) return;
     setIsSubmitting(true);
-    
     try {
       await apiFetch('/admin/keys', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Ambil client ID unik dari browser ini
-          'x-client-id': localStorage.getItem('bokhub_client_id') || 'admin-client-id'
-        },
-        body: JSON.stringify(newKey),
+        body: JSON.stringify({
+          ...newKey,
+          keyString: newKey.keyString.trim(),
+          durationHours: Number(newKey.durationHours),
+          maxDevices: Number(newKey.maxDevices),
+        }),
       });
       setShowModal(false);
-      setNewKey({ keyString: '', durationHours: 24, type: 'premium' });
+      setNewKey(EMPTY_KEY);
       loadKeys();
       loadStats();
       alert('✅ Key berhasil dibuat!');
@@ -120,6 +120,31 @@ export default function AdminPage() {
       loadKeys();
       loadStats();
     } catch (err) { alert(err.message); }
+  };
+
+  const handleEditDevices = async (k) => {
+    const cur = k.maxDevices ?? 1;
+    const input = window.prompt('Batas perangkat untuk key ini (0 = tanpa batas):', String(cur));
+    if (input === null) return;
+    const n = Number(input);
+    if (!Number.isInteger(n) || n < 0) return alert('Isi angka bulat 0 atau lebih.');
+    try {
+      await apiFetch(`/admin/keys/${k.id}`, { method: 'PATCH', body: JSON.stringify({ maxDevices: n }) });
+      loadKeys();
+    } catch (err) { alert(err.message); }
+  };
+
+  const handleResetHwid = async (id) => {
+    if (!window.confirm('Reset semua perangkat (HWID) yang terkunci di key ini?')) return;
+    try {
+      await apiFetch(`/admin/keys/${id}/reset-hwid`, { method: 'POST' });
+      loadKeys();
+    } catch (err) { alert(err.message); }
+  };
+
+  const deviceLabel = (k) => {
+    const max = k.maxDevices ?? 1;
+    return `${k.deviceCount ?? 0}/${max === 0 ? '∞' : max}`;
   };
 
   if (!token) {
@@ -146,23 +171,23 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans text-black">
       <div className="max-w-7xl mx-auto space-y-6">
-        
+
         {/* HEADER */}
         <div className="flex justify-between items-center bg-white p-5 rounded-xl shadow-sm border border-gray-200">
           <h1 className="text-xl font-bold text-gray-900">Dashboard Admin</h1>
           <div className="space-x-2">
-            <button onClick={loadStats} className="px-4 py-2 bg-gray-200 text-black rounded-lg text-sm hover:bg-gray-300">Refresh</button>
+            <button onClick={() => { loadStats(); loadKeys(); }} className="px-4 py-2 bg-gray-200 text-black rounded-lg text-sm hover:bg-gray-300">Refresh</button>
             <button onClick={handleLogout} className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">Logout</button>
           </div>
         </div>
 
-        {/* STATS CARDS */}
+        {/* STATS */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard title="Hari Ini" value={stats?.today.visits || 0} sub={`${stats?.today.uniqueVisitors || 0} Unique`} />
-          <StatCard title="Get Key" value={stats?.today.getKeyClicks || 0} sub="Klik Hari Ini" />
-          <StatCard title="Minggu Ini" value={stats?.week.visits || 0} sub={`${stats?.week.uniqueVisitors || 0} Unique`} />
-          <StatCard title="Bulan Ini" value={stats?.month.visits || 0} sub={`${stats?.month.uniqueVisitors || 0} Unique`} />
-          <StatCard title="Total Key" value={stats?.keys.total || 0} sub={`${stats?.keys.active || 0} Aktif`} />
+          <StatCard title="Hari Ini" value={stats?.today?.visits || 0} sub={`${stats?.today?.uniqueVisitors || 0} Unique`} />
+          <StatCard title="Get Key" value={stats?.today?.getKeyClicks || 0} sub="Klik Hari Ini" />
+          <StatCard title="Minggu Ini" value={stats?.week?.visits || 0} sub={`${stats?.week?.uniqueVisitors || 0} Unique`} />
+          <StatCard title="Bulan Ini" value={stats?.month?.visits || 0} sub={`${stats?.month?.uniqueVisitors || 0} Unique`} />
+          <StatCard title="Total Key" value={stats?.keys?.total || 0} sub={`${stats?.keys?.active || 0} Aktif`} />
         </div>
 
         {/* TABEL KEY */}
@@ -190,24 +215,32 @@ export default function AdminPage() {
                   <th className="p-4 font-semibold border-b">Key</th>
                   <th className="p-4 font-semibold border-b">Status</th>
                   <th className="p-4 font-semibold border-b">Tipe</th>
+                  <th className="p-4 font-semibold border-b">Perangkat</th>
                   <th className="p-4 font-semibold border-b">Expired</th>
                   <th className="p-4 font-semibold border-b text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
                 {keys.length === 0 ? (
-                  <tr><td colSpan="5" className="p-8 text-center text-gray-500">Belum ada key.</td></tr>
+                  <tr><td colSpan="6" className="p-8 text-center text-gray-500">Belum ada key.</td></tr>
                 ) : keys.map((k) => (
                   <tr key={k.id} className="border-b hover:bg-gray-50">
                     <td className="p-4 font-mono font-bold">{k.key}</td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded text-xs font-bold ${k.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {k.status.toUpperCase()}
+                        {String(k.status).toUpperCase()}
                       </span>
                     </td>
                     <td className="p-4 uppercase">{k.type}</td>
+                    <td className="p-4 font-mono">{deviceLabel(k)}</td>
                     <td className="p-4">{new Date(k.expiresAt).toLocaleDateString('id-ID')}</td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right whitespace-nowrap space-x-2">
+                      <button onClick={() => handleEditDevices(k)} className="px-3 py-1 bg-blue-100 text-blue-700 font-bold rounded hover:bg-blue-200">
+                        Batas
+                      </button>
+                      <button onClick={() => handleResetHwid(k.id)} className="px-3 py-1 bg-yellow-100 text-yellow-800 font-bold rounded hover:bg-yellow-200">
+                        Reset HWID
+                      </button>
                       <button onClick={() => handleDelete(k.id)} className="px-3 py-1 bg-red-100 text-red-700 font-bold rounded hover:bg-red-200">
                         Hapus
                       </button>
@@ -217,7 +250,7 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
-          
+
           {/* PAGINATION */}
           <div className="p-4 border-t flex justify-between items-center bg-gray-50">
             <span className="text-sm text-gray-600">Halaman {page} dari {totalPages}</span>
@@ -246,6 +279,7 @@ export default function AdminPage() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg text-black"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Durasi (Jam)</label>
                 <input
@@ -256,7 +290,36 @@ export default function AdminPage() {
                   onChange={(e) => setNewKey({ ...newKey, durationHours: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg text-black"
                 />
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {[[24, '1 Hari'], [168, '7 Hari'], [720, '30 Hari'], [LIFETIME_HOURS, 'Lifetime']].map(([h, label]) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setNewKey({ ...newKey, durationHours: h })}
+                      className="px-3 py-1 text-xs font-bold bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Batas Perangkat (HWID)</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="1"
+                  value={newKey.maxDevices}
+                  onChange={(e) => setNewKey({ ...newKey, maxDevices: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-black"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  1 = satu orang. Isi 5 kalau key boleh dipakai 5 perangkat. 0 = tanpa batas.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Tipe</label>
                 <select
@@ -268,7 +331,7 @@ export default function AdminPage() {
                   <option value="free">Free</option>
                 </select>
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 bg-gray-200 text-black font-bold rounded-lg hover:bg-gray-300">
                   Batal
