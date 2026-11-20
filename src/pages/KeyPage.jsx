@@ -1,0 +1,733 @@
+import { useState, useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { API } from '../utils/api';
+
+const MAX_KEYS = 3;
+const durations = [6, 12, 24, 48, 72]; // 6 jam = 1 checkpoint, 12 jam = 2, dst.
+const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
+const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
+const DISCORD_DURATION = 24; // hanya kunci 24 jam yang punya step Join Discord (+1 CP)
+const DISCORD_WAIT = 20; // detik menunggu sebelum Discord terbuka & dianggap selesai
+const hasDiscordStep = (hours) => Number(hours) === DISCORD_DURATION;
+
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* abaikan */ } },
+};
+
+const getClientId = () => {
+  let id = store.get('bokhub_client_id');
+  if (!id) {
+    id = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+    store.set('bokhub_client_id', id);
+  }
+  return id;
+};
+const CLIENT_ID = getClientId();
+const headers = { 'Content-Type': 'application/json', 'x-client-id': CLIENT_ID };
+
+/* ---------- Icons ---------- */
+const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+    {children}
+  </svg>
+);
+const CheckIcon = ({ className }) => <Svg className={className} sw={3}><path d="M5 13l4 4L19 7" /></Svg>;
+const TrashIcon = ({ className }) => (
+  <Svg className={className}>
+    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </Svg>
+);
+const KeyIcon = ({ className }) => (
+  <Svg className={className}>
+    <circle cx="8" cy="15" r="4" />
+    <path d="M10.8 12.2L20 3m-3 3l3 3m-5-1l2 2" />
+  </Svg>
+);
+const LayersIcon = ({ className }) => (
+  <Svg className={className}>
+    <path d="M12 3l9 5-9 5-9-5 9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Svg>
+);
+const CodeIcon = ({ className }) => (
+  <Svg className={className}>
+    <path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 5l-4 14" />
+  </Svg>
+);
+const ShieldIcon = ({ className }) => (
+  <Svg className={className}>
+    <path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6l8-3z" />
+    <path d="M9 12l2 2 4-4" />
+  </Svg>
+);
+const DiscordIcon = ({ className = 'w-4 h-4' }) => (
+  <svg className={`${className} text-indigo-400`} fill="currentColor" viewBox="0 0 24 24">
+    <path d="M19.3 5.4A16.4 16.4 0 0015.2 4l-.2.4a15 15 0 013.7 1.8 14.6 14.6 0 00-13.4 0A15 15 0 019 4.4L8.8 4a16.4 16.4 0 00-4.1 1.4C2.1 9.3 1.4 13.1 1.7 16.9a16.5 16.5 0 005 2.5l1.1-1.7a10.6 10.6 0 01-1.7-.8l.4-.3a11.7 11.7 0 0010.1 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.7a16.4 16.4 0 005-2.5c.4-4.4-.7-8.2-3.1-11.5zM8.7 14.6c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2zm6.600 0c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2z" />
+  </svg>
+);
+const ProviderIcon = ({ type, className = 'w-4 h-4' }) =>
+  type === 'LootLabs' ? (
+    <svg className={`${className} text-purple-400`} fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    </svg>
+  ) : (
+    <svg className={`${className} text-sky-400`} fill="currentColor" viewBox="0 0 24 24">
+      <path d="M3.9 12a5 5 0 015-5h3v2.2h-3a2.8 2.8 0 000 5.6h3V17h-3a5 5 0 01-5-5zm16.2 0a5 5 0 01-5 5h-3v-2.2h3a2.8 2.8 0 000-5.6h-3V7h3a5 5 0 015 5zM8 11h8v2H8z" />
+    </svg>
+  );
+
+const formatExpiry = (iso) =>
+  iso
+    ? new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : '';
+
+/* ---------- Reusable pieces ---------- */
+const TABS = [
+  { id: 'get', label: 'Get key', Icon: KeyIcon },
+  { id: 'mine', label: 'My keys', Icon: LayersIcon },
+  { id: 'check', label: 'Check key', Icon: ShieldIcon },
+  { id: 'script', label: 'Script', Icon: CodeIcon },
+];
+
+function TabBar({ tab, setTab, count }) {
+  return (
+    <div className="flex justify-center mb-10">
+      <div className="inline-flex items-center gap-1 p-1 rounded-full border border-white/10 bg-white/[0.02]">
+        {TABS.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm transition-colors ${
+              tab === id ? 'bg-white/10 text-white font-medium' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {label}
+            {id === 'mine' && count > 0 && (
+              <span className="text-[10px] px-1.5 rounded-full bg-white/10 text-gray-300">{count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CheckpointPlan({ total, completed = 0, provider, allDone = false, discord }) {
+  const rows = Array.from({ length: total });
+  const d = discord || {};
+  const counting = d.countdown != null;
+  const dNext = d.enabled && d.unlocked && !d.done && !allDone;
+  const cpCount = total + (d.enabled ? 1 : 0);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="text-xl font-semibold">Checkpoint plan</h3>
+        <span className="text-xs text-gray-500">{cpCount} CP</span>
+      </div>
+      <div className="border-t border-white/10">
+        {rows.map((_, i) => {
+          const done = allDone || i < completed;
+          const next = !allDone && i === completed;
+          return (
+            <div key={i} className="flex items-center gap-4 py-3.5 border-b border-white/10">
+              <span
+                className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 border text-xs ${
+                  done
+                    ? 'bg-[#8bff5e] border-[#8bff5e] text-black'
+                    : next
+                    ? 'border-white/40 text-white'
+                    : 'border-white/10 text-gray-500'
+                }`}
+              >
+                {done ? <CheckIcon className="w-3.5 h-3.5" /> : i + 1}
+              </span>
+              <ProviderIcon type={provider} className="w-4 h-4" />
+              <span className={`text-sm font-semibold ${done ? 'text-[#8bff5e]' : next ? 'text-white' : 'text-gray-400'}`}>
+                {provider} {i + 1}/{total}
+              </span>
+              <span className="ml-auto text-[11px] text-gray-500">
+                {done ? 'Selesai' : next ? 'Berikutnya' : 'Terkunci'}
+              </span>
+            </div>
+          );
+        })}
+
+        {d.enabled && (
+          <button
+            type="button"
+            onClick={d.onClick}
+            disabled={!dNext || counting || !d.onClick}
+            className={`relative w-full flex items-center gap-4 py-3.5 border-b border-white/10 text-left overflow-hidden transition-colors ${
+              dNext && !counting ? 'hover:bg-white/[0.03] cursor-pointer' : 'cursor-default'
+            }`}
+          >
+            <span
+              className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 border text-xs ${
+                d.done || allDone
+                  ? 'bg-[#8bff5e] border-[#8bff5e] text-black'
+                  : dNext
+                  ? 'border-white/40 text-white'
+                  : 'border-white/10 text-gray-500'
+              }`}
+            >
+              {d.done || allDone ? <CheckIcon className="w-3.5 h-3.5" /> : total + 1}
+            </span>
+            <DiscordIcon />
+            <span
+              className={`text-sm font-semibold ${
+                d.done || allDone ? 'text-[#8bff5e]' : dNext ? 'text-white' : 'text-gray-400'
+              }`}
+            >
+              Join Discord
+            </span>
+            <span className="ml-auto text-[11px] text-gray-500">
+              {d.done || allDone
+                ? 'Selesai'
+                : counting
+                ? `Membuka dalam ${d.countdown} dtk`
+                : dNext
+                ? 'Klik untuk mulai'
+                : 'Terkunci'}
+            </span>
+            {counting && (
+              <span
+                className="absolute left-0 bottom-0 h-[2px] bg-indigo-400 transition-all duration-1000 ease-linear"
+                style={{ width: `${((DISCORD_WAIT - d.countdown) / DISCORD_WAIT) * 100}%` }}
+              />
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProviderPicker({ provider, onChange }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {['LootLabs', 'Work.ink'].map((p) => (
+        <button
+          key={p}
+          onClick={() => onChange(p)}
+          className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm transition-colors ${
+            provider === p
+              ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white'
+              : 'border-white/10 text-gray-400 hover:border-white/30'
+          }`}
+        >
+          <ProviderIcon type={p} />
+          {p}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const PrimaryButton = ({ children, ...props }) => (
+  <button
+    {...props}
+    className="w-full bg-[#8bff5e] hover:bg-[#7be652] text-black font-semibold py-3 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    {children}
+  </button>
+);
+
+/* ---------- Page ---------- */
+export default function KeyPage() {
+  const [tab, setTab] = useState('get');
+  const [duration, setDuration] = useState(24);
+  const [provider, setProvider] = useState(store.get('bokhub_provider') || 'LootLabs');
+  const [keys, setKeys] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+  const [copied, setCopied] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  // Step Join Discord (khusus 24 jam)
+  const [discordDone, setDiscordDone] = useState(() => {
+    try { return JSON.parse(store.get('bokhub_discord_done') || '[]'); } catch { return []; }
+  });
+  const [discordKey, setDiscordKey] = useState(null);
+  const [discordCount, setDiscordCount] = useState(null);
+
+  // Check key
+  const [checkInput, setCheckInput] = useState('');
+  const [checkResult, setCheckResult] = useState(null);
+  const [checking, setChecking] = useState(false);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ran = useRef(false);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3500);
+  };
+
+  const changeProvider = (p) => {
+    setProvider(p);
+    store.set('bokhub_provider', p);
+  };
+
+  const switchTab = (t) => {
+    setTab(t);
+    setError('');
+  };
+
+  const loadKeys = async (preferred) => {
+    const res = await fetch(`${API}/keys/mine`, { headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Gagal memuat kunci');
+
+    // Kunci yang sudah siap ditaruh paling bawah
+    const sorted = [...data.keys].sort((a, b) => {
+      if (a.status === 'ready' && b.status !== 'ready') return 1;
+      if (a.status !== 'ready' && b.status === 'ready') return -1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    setKeys(sorted);
+    setSelected((cur) => {
+      const want = preferred || cur;
+      if (want && sorted.some((k) => k.key === want)) return want;
+      const pending = sorted.find((k) => k.status !== 'ready');
+      return (pending || sorted[0] || {}).key || null;
+    });
+    return sorted;
+  };
+
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+
+    const init = async () => {
+      const success = searchParams.get('checkpoint_success');
+      const urlKey = searchParams.get('key');
+      const token = searchParams.get('token');
+
+      try {
+        if (success === 'true' && urlKey && token) {
+          setTab('mine');
+          try {
+            const res = await fetch(`${API}/keys/${urlKey}/checkpoint`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ token }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Checkpoint ditolak');
+            showToast(
+              data.status === 'ready'
+                ? 'Semua checkpoint selesai! Kunci siap.'
+                : `Checkpoint ${data.checkpointsCompleted} selesai ✓`
+            );
+          } catch (e) {
+            setError(e.message);
+          }
+          setSearchParams({}, { replace: true });
+          await loadKeys(urlKey);
+        } else {
+          const list = await loadKeys();
+          if (list.length > 0) setTab('mine');
+        }
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setBooting(false);
+      }
+    };
+    init();
+  }, []);
+
+  const startDiscord = (keyString) => {
+    if (discordCount !== null) return;
+    setDiscordKey(keyString);
+    setDiscordCount(DISCORD_WAIT);
+  };
+
+  useEffect(() => {
+    if (discordCount === null) return;
+    if (discordCount <= 0) {
+      const next = [...new Set([...discordDone, discordKey])];
+      setDiscordDone(next);
+      store.set('bokhub_discord_done', JSON.stringify(next));
+      setDiscordCount(null);
+      setDiscordKey(null);
+      showToast('Join Discord selesai ✓');
+      const w = window.open(DISCORD_URL, '_blank', 'noopener');
+      if (!w) window.location.href = DISCORD_URL;
+      return;
+    }
+    const t = setTimeout(() => setDiscordCount((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [discordCount]);
+
+  const generateKey = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/keys/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ durationHours: Number(duration) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal membuat kunci');
+      store.set('bokhub_provider', provider);
+      await loadKeys(data.key);
+      setTab('mine');
+      showToast('Kunci berhasil dibuat!');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/keys/${deleteTarget}`, { method: 'DELETE', headers });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Gagal menghapus kunci');
+      }
+      showToast('Kunci berhasil dihapus');
+      setDeleteTarget(null);
+      await loadKeys();
+    } catch (err) {
+      setError(err.message);
+      setDeleteTarget(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const goToProvider = async (keyString) => {
+    setLoading(true);
+    setError('');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`${API}/keys/${keyString}/redirect`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ provider }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) throw new Error(data.error || 'Gagal mendapatkan link redirect');
+      window.location.href = data.redirectUrl;
+    } catch (e) {
+      if (e.name === 'AbortError') setError('Koneksi terlalu lama. Coba lagi.');
+      else setError(e.message);
+      setLoading(false);
+    }
+  };
+
+  const checkKey = async () => {
+    const value = checkInput.trim();
+    if (!value) return;
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      let info = null;
+      try {
+        const res = await fetch(`${API}/keys/${encodeURIComponent(value)}/status`, { headers });
+        if (res.ok) info = await res.json();
+      } catch (err) {
+        console.warn("Gagal cek ke server", err);
+      }
+
+      const mine = keys.find((k) => k.key === value);
+      if (!info && mine) info = mine;
+
+      if (!info) {
+        setCheckResult({ found: false });
+      } else {
+        const expired = info.expiresAt && new Date(info.expiresAt) < new Date();
+        const isReady = info.status === 'ready' || info.checkpointsCompleted >= info.checkpointsRequired;
+        
+        setCheckResult({
+          found: true,
+          key: value,
+          status: expired ? 'expired' : isReady ? 'ready' : 'pending',
+          durationHours: info.durationHours,
+          expiresAt: info.expiresAt,
+          done: info.checkpointsCompleted || 0,
+          total: info.checkpointsRequired || 1,
+          hwid: info.hwid || null, // TAMBAHKAN BARIS INI
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      setCheckResult({ found: false });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const copy = (text, id) => {
+    try { navigator.clipboard.writeText(text); } catch { /* abaikan */ }
+    setCopied(id);
+    setTimeout(() => setCopied(''), 1800);
+  };
+
+  const isReadyKey = (k) => k.status === 'ready' && (!hasDiscordStep(k.durationHours) || discordDone.includes(k.key));
+  const progressOf = (k) => {
+    const d = hasDiscordStep(k.durationHours);
+    return {
+      done: k.checkpointsCompleted + (d && discordDone.includes(k.key) ? 1 : 0),
+      total: k.checkpointsRequired + (d ? 1 : 0),
+    };
+  };
+
+  const current = keys.find((k) => k.key === selected) || null;
+  const ready = current ? isReadyKey(current) : false;
+  const hasDiscord = current ? hasDiscordStep(current.durationHours) : false;
+  const providersDone = current ? current.checkpointsCompleted >= current.checkpointsRequired : false;
+  const currentProgress = current ? progressOf(current) : { done: 0, total: 1 };
+  const percent = Math.round((currentProgress.done / currentProgress.total) * 100);
+  const canCreate = keys.length < MAX_KEYS;
+  const previewTotal = durations.indexOf(Number(duration)) + 1;
+
+  return (
+    <div className="min-h-screen bg-[#060b10] text-white">
+      {toast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-[#0d1a13] border border-[#8bff5e]/40 text-[#8bff5e] text-xs font-medium px-4 py-2.5 rounded-lg shadow-lg">
+          <CheckIcon className="w-4 h-4" />
+          {toast}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="bg-[#0d1319] border border-white/10 rounded-xl p-5 w-full max-w-sm">
+            <h3 className="text-sm font-semibold mb-2">Hapus kunci?</h3>
+            <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+              Kunci <span className="font-mono text-white bg-white/10 px-1 py-0.5 rounded break-all">{deleteTarget}</span>{' '}
+              akan dihapus permanen dan kuota Anda kembali.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 rounded-md border border-white/10 text-gray-300 text-xs hover:bg-white/5 transition-colors">Batal</button>
+              <button onClick={confirmDelete} disabled={loading} className="px-3 py-1.5 rounded-md bg-red-500/20 text-red-400 border border-red-500/30 text-xs hover:bg-red-500/30 transition-colors disabled:opacity-50">{loading ? 'Menghapus...' : 'Ya, hapus'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-xl mx-auto px-4 py-10">
+        <TabBar tab={tab} setTab={switchTab} count={keys.length} />
+
+        {error && <div className="mb-5 text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>}
+
+        {booting ? (
+          <div className="py-20 text-center text-sm text-gray-500 animate-pulse">Memuat...</div>
+        ) : (
+          <>
+            {/* GET KEY */}
+            {tab === 'get' && (
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Dapatkan kunci gratis</h1>
+                <p className="text-sm text-gray-400 mb-8">Pilih durasi, lalu selesaikan checkpoint untuk membuka kunci BOKHUB.</p>
+
+                <label className="block text-sm font-semibold mb-3">Durasi kunci</label>
+                <div className="grid grid-cols-5 gap-2 mb-8">
+                  {durations.map((d, i) => (
+                    <button key={d} onClick={() => setDuration(d)} className={`flex flex-col items-center py-3 rounded-lg border transition-colors ${duration === d ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white' : 'border-white/10 text-gray-400 hover:border-white/30'}`}>
+                      <span className="text-sm font-semibold">{d} jam</span>
+                      <span className="text-[10px] text-gray-500 mt-0.5">{i + 1 + (d === DISCORD_DURATION ? 1 : 0)} CP</span>
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block text-sm font-semibold mb-3">Provider</label>
+                <div className="mb-8"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
+                <div className="mb-8"><CheckpointPlan total={previewTotal} provider={provider} discord={{ enabled: Number(duration) === DISCORD_DURATION }} /></div>
+
+                <PrimaryButton onClick={generateKey} disabled={loading || !canCreate}>{loading ? 'Memproses...' : canCreate ? 'Buat kunci sekarang' : `Batas ${MAX_KEYS} kunci aktif tercapai`}</PrimaryButton>
+                <p className="text-[11px] text-gray-500 mt-3 text-center">{keys.length}/{MAX_KEYS} kunci aktif</p>
+              </div>
+            )}
+
+            {/* MY KEYS */}
+            {tab === 'mine' && (
+              <div>
+                <div className="flex items-end justify-between mb-5">
+                  <div>
+                    <h1 className="text-3xl font-bold mb-2">Kunci saya</h1>
+                    <p className="text-sm text-gray-400">{keys.length}/{MAX_KEYS} kunci aktif</p>
+                  </div>
+                  <button onClick={() => switchTab('get')} disabled={!canCreate} className="text-xs px-3 py-1.5 rounded-md border border-[#8bff5e]/40 text-[#8bff5e] hover:bg-[#8bff5e]/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">+ Kunci baru</button>
+                </div>
+
+                {keys.length === 0 ? (
+                  <div className="border border-dashed border-white/10 rounded-xl py-14 text-center">
+                    <p className="text-sm text-gray-400 mb-4">Belum ada kunci.</p>
+                    <button onClick={() => switchTab('get')} className="text-xs px-4 py-2 rounded-md bg-[#8bff5e] text-black font-semibold hover:bg-[#7be652] transition-colors">Buat kunci pertama</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2 mb-8">
+                      {keys.map((k) => {
+                        const isReady = isReadyKey(k);
+                        const prog = progressOf(k);
+                        const active = k.key === selected;
+                        return (
+                          <div key={k.key} onClick={() => { setSelected(k.key); setError(''); }} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${active ? 'border-[#8bff5e]/60 bg-[#8bff5e]/5' : 'border-white/10 hover:border-white/30'}`}>
+                            <span className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 border text-[10px] ${isReady ? 'bg-[#8bff5e] border-[#8bff5e] text-black' : 'border-white/20 text-gray-400'}`}>
+                              {isReady ? <CheckIcon className="w-3.5 h-3.5" /> : `${prog.done}/${prog.total}`}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className={`font-mono text-[11px] break-all ${isReady ? 'text-white' : 'text-gray-400'}`}>{k.key}</p>
+                              <p className="text-[10px] text-gray-500 mt-0.5">{k.durationHours} jam · s/d {formatExpiry(k.expiresAt)}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className={`text-[10px] ${isReady ? 'text-[#8bff5e]' : 'text-gray-400'}`}>{isReady ? 'Siap' : 'Proses'}</span>
+                              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(k.key); }} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Hapus kunci"><TrashIcon className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {current && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs text-gray-400">Progres</span>
+                          <span className="text-xs text-gray-400">{currentProgress.done}/{currentProgress.total} selesai</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mb-5">
+                          <div className="h-full bg-[#8bff5e] transition-all duration-700" style={{ width: `${percent}%` }} />
+                        </div>
+
+                        {ready && (
+                          <div className="rounded-lg border border-[#8bff5e]/20 bg-[#8bff5e]/5 p-3 mb-5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs text-[#8bff5e] break-all select-all">{current.key}</span>
+                              <button onClick={() => copy(current.key, 'key')} className="shrink-0 text-[11px] text-gray-200 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded transition-colors">{copied === 'key' ? 'Tersalin ✓' : 'Salin'}</button>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-2">Berlaku sampai {formatExpiry(current.expiresAt)}</p>
+                          </div>
+                        )}
+
+                        <div className="mb-6">
+                          <CheckpointPlan total={current.checkpointsRequired} completed={current.checkpointsCompleted} provider={provider} allDone={ready} discord={{ enabled: hasDiscord, done: discordDone.includes(current.key), countdown: discordKey === current.key ? discordCount : null, unlocked: providersDone, onClick: () => startDiscord(current.key) }} />
+                        </div>
+
+                        {!ready && !providersDone && (
+                          <>
+                            <div className="mb-3"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
+                            <PrimaryButton onClick={() => goToProvider(current.key)} disabled={loading}>{loading ? 'Mengalihkan...' : `Selesaikan checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
+                            <p className="text-[11px] text-gray-500 mt-3 text-center">Anda akan diarahkan ke {provider} dan otomatis kembali ke halaman ini setelah selesai.</p>
+                          </>
+                        )}
+
+                        {!ready && providersDone && hasDiscord && (
+                          <p className="text-xs text-gray-400 text-center">{discordKey === current.key && discordCount !== null ? `Discord akan terbuka dalam ${discordCount} detik. Tetap di halaman ini.` : 'Tinggal satu langkah: klik "Join Discord" di atas.'}</p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* CHECK KEY (Sudah Ditambahkan HWID) */}
+            {tab === 'check' && (
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Cek kunci</h1>
+                <p className="text-sm text-gray-400 mb-8">Tempel kunci untuk melihat status dan masa berlakunya.</p>
+
+                <div className="flex gap-2 mb-5">
+                  <input value={checkInput} onChange={(e) => setCheckInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && checkKey()} placeholder="Masukkan kunci Anda" spellCheck={false} className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 focus:border-[#8bff5e]/60 outline-none rounded-lg px-3.5 py-2.5 text-sm font-mono placeholder:font-sans placeholder:text-gray-500" />
+                  <button onClick={checkKey} disabled={checking || !checkInput.trim()} className="shrink-0 bg-[#8bff5e] hover:bg-[#7be652] text-black font-semibold px-5 rounded-lg text-sm transition-colors disabled:opacity-50">{checking ? 'Memeriksa...' : 'Cek'}</button>
+                </div>
+
+                {checkResult && !checkResult.found && (
+                  <div className="rounded-lg border border-red-400/30 bg-red-400/5 p-4 text-sm text-red-300">
+                    <p className="font-semibold mb-1">Kunci tidak ditemukan.</p>
+                    <p className="text-xs">Pastikan penulisan sudah benar, atau kunci mungkin sudah dihapus/expired.</p>
+                  </div>
+                )}
+
+                {checkResult?.found && (
+                  <div className={`rounded-lg border p-4 ${checkResult.status === 'expired' ? 'border-red-400/30 bg-red-400/5 text-red-400' : checkResult.status === 'ready' ? 'border-[#8bff5e]/30 bg-[#8bff5e]/5 text-[#8bff5e]' : 'border-amber-300/30 bg-amber-300/5 text-amber-300'}`}>
+                    <p className="text-sm font-semibold mb-3">
+                      {checkResult.status === 'expired' ? '❌ Kunci Kedaluwarsa' : checkResult.status === 'ready' ? '✅ Kunci Valid & Siap Dipakai' : '⏳ Kunci Belum Selesai Checkpoint'}
+                    </p>
+                    <p className="font-mono text-xs text-white break-all mb-3">{checkResult.key}</p>
+                    <dl className="grid grid-cols-2 gap-y-2 text-xs">
+                      {checkResult.durationHours != null && (
+                        <><dt className="text-gray-400">Durasi</dt><dd className="text-white text-right">{checkResult.durationHours} jam</dd></>
+                      )}
+                      {checkResult.expiresAt && (
+                        <><dt className="text-gray-400">Berlaku sampai</dt><dd className="text-white text-right">{formatExpiry(checkResult.expiresAt)}</dd></>
+                      )}
+                      {checkResult.total != null && checkResult.status !== 'expired' && (
+                        <><dt className="text-gray-400">Checkpoint</dt><dd className="text-white text-right">{checkResult.done}/{checkResult.total}</dd></>
+                      )}
+                      {/* TAMBAHAN STATUS HWID */}
+                      {checkResult.status !== 'expired' && (
+                        <>
+                          <dt className="text-gray-400">Status HWID</dt>
+                          <dd className={`text-right font-semibold ${checkResult.hwid ? 'text-[#8bff5e]' : 'text-amber-300'}`}>
+                            {checkResult.hwid ? 'Terkunci (1 Device)' : 'Belum Terkunci'}
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SCRIPT */}
+            {tab === 'script' && (
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Skrip pemuat</h1>
+                <p className="text-sm text-gray-400 mb-8">Salin skrip, tempelkan di executor, lalu masukkan kunci Anda di jendela BOKHUB.</p>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-semibold">Script</span>
+                    <button onClick={() => copy(LOADER, 'script')} className="text-[11px] bg-white/10 hover:bg-white/20 text-gray-200 px-2.5 py-1 rounded transition-colors">{copied === 'script' ? 'Tersalin ✓' : 'Salin skrip'}</button>
+                  </div>
+                  <div className="bg-black/50 rounded-lg p-3 font-mono text-[11px] text-[#8bff5e] break-all border border-white/5 select-all">{LOADER}</div>
+                </div>
+
+                <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] p-4 transition-colors">
+                  <DiscordIcon className="w-5 h-5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">Gabung Discord BOKHUB</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Update skrip, bantuan, dan info terbaru.</p>
+                  </div>
+                  <span className="text-[11px] text-gray-400">Buka</span>
+                </a>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="mt-14">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between gap-4">
+            <p className="text-xs text-gray-400 leading-relaxed">Ada pertanyaan? Cek FAQ atau tanya langsung di Discord.</p>
+            <div className="flex gap-2 shrink-0">
+              <Link to="#" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">FAQ</Link>
+              <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">Discord</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bok-bg: #0a0a0a;         /* Hitam pekat */
+  --color-bok-card: #141414;       /* Warna card */
+  --color-bok-border: #262626;     /* Warna border */
+  --color-bok-accent: #8bff5e;     /* Hijau neon (khusus) */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  background-color: var(--color-bok-bg);
+  color: white;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
