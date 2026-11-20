@@ -5,7 +5,7 @@ import HomePage from './pages/HomePage';
 import KeyPage from './pages/KeyPage';
 import PremiumPage from './pages/PremiumPage';
 import ResetPage from './pages/ResetPage';
-import AdminPage from './pages/AdminPage'; // <-- Tambahkan ini
+import AdminPage from './pages/AdminPage';
 
 export default function App() {
   return (
@@ -15,10 +15,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/key" element={<KeyPage />} />
+          <Route path="/keyy" element={<KeyPage />} />
           <Route path="/premium" element={<PremiumPage />} />
+          <Route path="/reset" element={<ResetPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<NotFound />} />
-                    <Route path="/reset" element={<ResetPage />} /> 
-                            <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>
       <Footer />
