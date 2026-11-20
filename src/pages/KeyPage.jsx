@@ -260,6 +260,7 @@ export default function KeyPage() {
   const [keys, setKeys] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [redirectUrl, setRedirectUrl] = useState(''); // link provider sebagai cadangan kalau redirect otomatis gagal
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -361,6 +362,16 @@ export default function KeyPage() {
     init();
   }, []);
 
+  // Saat user menekan Back dari provider, browser bisa memulihkan halaman dengan loading=true.
+  // Reset supaya tombol tidak terkunci selamanya.
+  useEffect(() => {
+    const onShow = (e) => {
+      if (e.persisted) setLoading(false);
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
+
   const startDiscord = (keyString) => {
     if (discordCount !== null) return;
     setDiscordKey(keyString);
@@ -430,6 +441,7 @@ export default function KeyPage() {
   const goToProvider = async (keyString) => {
     setLoading(true);
     setError('');
+    setRedirectUrl('');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
@@ -439,12 +451,16 @@ export default function KeyPage() {
         body: JSON.stringify({ provider }),
         signal: controller.signal,
       });
-      clearTimeout(timeoutId);
       const data = await res.json().catch(() => ({}));
+      clearTimeout(timeoutId);
       if (!res.ok || !data.redirectUrl) {
         throw new Error(data.error || `Gagal mendapatkan link checkpoint (${res.status})`);
       }
-      window.location.href = data.redirectUrl;
+      console.log('redirectUrl:', data.redirectUrl);
+      setRedirectUrl(data.redirectUrl);
+      window.location.assign(data.redirectUrl);
+      // Jaga-jaga: kalau 4 detik kemudian masih di halaman ini, buka kunci tombolnya lagi
+      setTimeout(() => setLoading(false), 4000);
     } catch (e) {
       clearTimeout(timeoutId);
       if (e.name === 'AbortError') setError('Koneksi terlalu lama. Coba lagi.');
@@ -651,6 +667,12 @@ export default function KeyPage() {
                             <div className="mb-3"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
                             <PrimaryButton onClick={() => goToProvider(current.key)} disabled={loading}>{loading ? 'Mengalihkan...' : `Selesaikan checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
                             <p className="text-[11px] text-gray-500 mt-3 text-center">Anda akan diarahkan ke {provider} dan otomatis kembali ke halaman ini setelah selesai.</p>
+                            {redirectUrl && (
+                              <p className="text-[11px] text-gray-400 mt-2 text-center">
+                                Tidak berpindah otomatis?{' '}
+                                <a href={redirectUrl} className="text-[#8bff5e] underline">Klik di sini</a>
+                              </p>
+                            )}
                           </>
                         )}
 
