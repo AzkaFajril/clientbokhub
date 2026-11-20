@@ -35,8 +35,8 @@ const getClientId = () => {
 const CLIENT_ID = getClientId();
 const headers = { 'Content-Type': 'application/json', 'x-client-id': CLIENT_ID };
 
-// sembunyikan angka di tengah key sampai key benar-benar siap dipakai
-const maskKey = (k) => String(k).replace(/-(\d+)-/, (_, d) => `-${'•'.repeat(d.length)}-`);
+// Selama checkpoint belum selesai, key tidak ditampilkan sama sekali
+const HIDDEN_TEXT = 'Tersembunyi sampai checkpoint selesai';
 
 /* ---------- Icons ---------- */
 const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
@@ -551,8 +551,7 @@ export default function KeyPage() {
           <div className="bg-[#0d1319] border border-white/10 rounded-xl p-5 w-full max-w-sm">
             <h3 className="text-sm font-semibold mb-2">Hapus kunci?</h3>
             <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-              Kunci <span className="font-mono text-white bg-white/10 px-1 py-0.5 rounded break-all">{maskKey(deleteTarget)}</span>{' '}
-              akan dihapus permanen dan kuota Anda kembali.
+              Kunci ini akan dihapus permanen dan kuota Anda kembali.
             </p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 rounded-md border border-white/10 text-gray-300 text-xs hover:bg-white/5 transition-colors">Batal</button>
@@ -625,7 +624,7 @@ export default function KeyPage() {
                               {isReady ? <CheckIcon className="w-3.5 h-3.5" /> : `${prog.done}/${prog.total}`}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <p className={`font-mono text-[11px] break-all ${isReady ? 'text-white' : 'text-gray-400'}`}>{isReady ? k.key : maskKey(k.key)}</p>
+                              <p className={`text-[11px] break-all ${isReady ? 'font-mono text-white' : 'text-gray-400'}`}>{isReady ? k.key : HIDDEN_TEXT}</p>
                               <p className="text-[10px] text-gray-500 mt-0.5">{k.durationHours} jam · s/d {formatExpiry(k.expiresAt)}</p>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
@@ -709,7 +708,7 @@ export default function KeyPage() {
                     <p className="text-sm font-semibold mb-3">
                       {checkResult.status === 'expired' ? '❌ Kunci Kedaluwarsa' : checkResult.status === 'ready' ? '✅ Kunci Valid & Siap Dipakai' : '⏳ Kunci Belum Selesai Checkpoint'}
                     </p>
-                    <p className="font-mono text-xs text-white break-all mb-3">{checkResult.status === 'ready' ? checkResult.key : maskKey(checkResult.key)}</p>
+                    <p className={`text-xs break-all mb-3 ${checkResult.status === 'ready' ? 'font-mono text-white' : 'text-gray-300'}`}>{checkResult.status === 'ready' ? checkResult.key : HIDDEN_TEXT}</p>
                     <dl className="grid grid-cols-2 gap-y-2 text-xs">
                       {checkResult.durationHours != null && (
                         <><dt className="text-gray-400">Durasi</dt><dd className="text-white text-right">{checkResult.durationHours} jam</dd></>
