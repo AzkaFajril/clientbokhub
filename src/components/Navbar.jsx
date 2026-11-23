@@ -14,11 +14,11 @@ export default function Navbar() {
           </Link>
           
           <div className="hidden md:flex items-center gap-6">
-            <Link to="/" className="text-sm text-gray-300 hover:text-white transition-colors">Beranda</Link>
-            <Link to="/key" className="text-sm text-gray-300 hover:text-white transition-colors">Dapatkan Kunci</Link>
+            <Link to="/" className="text-sm text-gray-300 hover:text-white transition-colors">Home</Link>
+            <Link to="/key" className="text-sm text-gray-300 hover:text-white transition-colors">Get Key</Link>
             <Link to="/premium" className="text-sm text-gray-300 hover:text-white transition-colors">Premium</Link>
             {/* Menu Baru untuk Reset HWID */}
-            <Link to="/reset" className="text-sm text-gray-300 hover:text-white transition-colors">Reset Perangkat</Link>
+            <Link to="/reset" className="text-sm text-gray-300 hover:text-white transition-colors">Reset Device</Link>
             <Link to="#" className="text-sm text-gray-300 hover:text-white transition-colors">F.A.Q</Link>
           </div>
         </div>

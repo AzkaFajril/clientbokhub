@@ -3,14 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { API } from '../utils/api';
 
 const MAX_KEYS = 3;
-const durations = [6, 12, 24, 48, 72]; // 6 jam = 1 checkpoint, 12 jam = 2, dst.
+const durations = [6, 12, 24, 48, 72]; // 6 hours = 1 checkpoint, 12 hours = 2, etc.
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
-const DISCORD_DURATION = 24; // hanya kunci 24 jam yang punya step Join Discord (+1 CP)
-const DISCORD_WAIT = 20; // detik menunggu sebelum Discord terbuka & dianggap selesai
+const DISCORD_DURATION = 24; // only the 24-hour key has the Join Discord step (+1 CP)
+const DISCORD_WAIT = 20; // seconds to wait before Discord opens and the step counts as done
 const hasDiscordStep = (hours) => Number(hours) === DISCORD_DURATION;
 
-// Provider yang sudah aktif di backend. Tambahkan 'Work.ink' di sini kalau backend-nya sudah siap.
+// Providers that are already active on the backend. Add 'Work.ink' here once the backend is ready.
 const PROVIDERS = [
   { id: 'LootLabs', available: true },
   { id: 'Work.ink', available: false },
@@ -19,7 +19,7 @@ const AVAILABLE_PROVIDERS = PROVIDERS.filter((p) => p.available).map((p) => p.id
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* abaikan */ } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
 const getClientId = () => {
@@ -35,8 +35,8 @@ const getClientId = () => {
 const CLIENT_ID = getClientId();
 const headers = { 'Content-Type': 'application/json', 'x-client-id': CLIENT_ID };
 
-// Selama checkpoint belum selesai, key tidak ditampilkan sama sekali
-const HIDDEN_TEXT = 'Tersembunyi sampai checkpoint selesai';
+// Until the checkpoints are finished, the key is not shown at all
+const HIDDEN_TEXT = 'Hidden until checkpoints are completed';
 
 /* ---------- Icons ---------- */
 const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
@@ -75,7 +75,7 @@ const ShieldIcon = ({ className }) => (
 );
 const DiscordIcon = ({ className = 'w-4 h-4' }) => (
   <svg className={`${className} text-indigo-400`} fill="currentColor" viewBox="0 0 24 24">
-    <path d="M19.3 5.4A16.4 16.4 0 0015.2 4l-.2.4a15 15 0 013.7 1.8 14.6 14.6 0 00-13.4 0A15 15 0 019 4.4L8.8 4a16.4 16.4 0 00-4.1 1.4C2.1 9.3 1.4 13.1 1.7 16.9a16.5 16.5 0 005 2.5l1.1-1.7a10.6 10.6 0 01-1.7-.8l.4-.3a11.7 11.7 0 0010.1 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.7a16.4 16.4 0 005-2.5c.4-4.4-.7-8.2-3.1-11.5zM8.7 14.6c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2zm6.600 0c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2z" />
+    <path d="M19.3 5.4A16.4 16.4 0 0015.2 4l-.2.4a15 15 0 013.7 1.8 14.6 14.6 0 00-13.4 0A15 15 0 019 4.4L8.8 4a16.4 16.4 0 00-4.1 1.4C2.1 9.3 1.4 13.1 1.7 16.9a16.5 16.5 0 005 2.5l1.1-1.7a10.6 10.6 0 01-1.7-.8l.4-.3a11.7 11.7 0 0010.1 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.7a16.4 16.4 0 005-2.5c.4-4.4-.7-8.2-3.1-11.5zM8.7 14.6c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z" />
   </svg>
 );
 const ProviderIcon = ({ type, className = 'w-4 h-4' }) =>
@@ -91,7 +91,7 @@ const ProviderIcon = ({ type, className = 'w-4 h-4' }) =>
 
 const formatExpiry = (iso) =>
   iso
-    ? new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    ? new Date(iso).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '';
 
 /* ---------- Reusable pieces ---------- */
@@ -160,7 +160,7 @@ function CheckpointPlan({ total, completed = 0, provider, allDone = false, disco
                 {provider} {i + 1}/{total}
               </span>
               <span className="ml-auto text-[11px] text-gray-500">
-                {done ? 'Selesai' : next ? 'Berikutnya' : 'Terkunci'}
+                {done ? 'Completed' : next ? 'Next' : 'Locked'}
               </span>
             </div>
           );
@@ -196,12 +196,12 @@ function CheckpointPlan({ total, completed = 0, provider, allDone = false, disco
             </span>
             <span className="ml-auto text-[11px] text-gray-500">
               {d.done || allDone
-                ? 'Selesai'
+                ? 'Completed'
                 : counting
-                ? `Membuka dalam ${d.countdown} dtk`
+                ? `Opening in ${d.countdown}s`
                 : dNext
-                ? 'Klik untuk mulai'
-                : 'Terkunci'}
+                ? 'Click to start'
+                : 'Locked'}
             </span>
             {counting && (
               <span
@@ -224,7 +224,7 @@ function ProviderPicker({ provider, onChange }) {
           key={p}
           onClick={() => available && onChange(p)}
           disabled={!available}
-          title={available ? '' : 'Segera hadir'}
+          title={available ? '' : 'Coming soon'}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm transition-colors ${
             provider === p
               ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white'
@@ -233,7 +233,7 @@ function ProviderPicker({ provider, onChange }) {
         >
           <ProviderIcon type={p} />
           {p}
-          {!available && <span className="text-[10px] text-gray-500">Segera</span>}
+          {!available && <span className="text-[10px] text-gray-500">Soon</span>}
         </button>
       ))}
     </div>
@@ -260,14 +260,14 @@ export default function KeyPage() {
   const [keys, setKeys] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [redirectUrl, setRedirectUrl] = useState(''); // link provider sebagai cadangan kalau redirect otomatis gagal
+  const [redirectUrl, setRedirectUrl] = useState(''); // provider link as a fallback if the automatic redirect fails
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [copied, setCopied] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  // Step Join Discord (khusus 24 jam)
+  // Join Discord step (24-hour keys only)
   const [discordDone, setDiscordDone] = useState(() => {
     try { return JSON.parse(store.get('bokhub_discord_done') || '[]'); } catch { return []; }
   });
@@ -300,9 +300,9 @@ export default function KeyPage() {
   const loadKeys = async (preferred) => {
     const res = await fetch(`${API}/keys/mine`, { headers });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Gagal memuat kunci');
+    if (!res.ok) throw new Error(data.error || 'Failed to load keys');
 
-    // Kunci yang sudah siap ditaruh paling bawah
+    // Ready keys go to the bottom
     const sorted = [...(data.keys || [])].sort((a, b) => {
       if (a.status === 'ready' && b.status !== 'ready') return 1;
       if (a.status !== 'ready' && b.status === 'ready') return -1;
@@ -338,11 +338,11 @@ export default function KeyPage() {
               body: JSON.stringify({ token }),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || 'Checkpoint ditolak');
+            if (!res.ok) throw new Error(data.error || 'Checkpoint rejected');
             showToast(
               data.status === 'ready'
-                ? 'Semua checkpoint selesai! Kunci siap.'
-                : `Checkpoint ${data.checkpointsCompleted} selesai ✓`
+                ? 'All checkpoints completed! Your key is ready.'
+                : `Checkpoint ${data.checkpointsCompleted} completed ✓`
             );
           } catch (e) {
             setError(e.message);
@@ -362,8 +362,8 @@ export default function KeyPage() {
     init();
   }, []);
 
-  // Saat user menekan Back dari provider, browser bisa memulihkan halaman dengan loading=true.
-  // Reset supaya tombol tidak terkunci selamanya.
+  // When the user presses Back from the provider, the browser may restore the page with loading=true.
+  // Reset it so the button doesn't stay locked forever.
   useEffect(() => {
     const onShow = (e) => {
       if (e.persisted) setLoading(false);
@@ -386,7 +386,7 @@ export default function KeyPage() {
       store.set('bokhub_discord_done', JSON.stringify(next));
       setDiscordCount(null);
       setDiscordKey(null);
-      showToast('Join Discord selesai ✓');
+      showToast('Join Discord completed ✓');
       const w = window.open(DISCORD_URL, '_blank', 'noopener');
       if (!w) window.location.href = DISCORD_URL;
       return;
@@ -405,11 +405,11 @@ export default function KeyPage() {
         body: JSON.stringify({ durationHours: Number(duration) }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Gagal membuat kunci (${res.status})`);
+      if (!res.ok) throw new Error(data.error || `Failed to create key (${res.status})`);
       store.set('bokhub_provider', provider);
       await loadKeys(data.key);
       setTab('mine');
-      showToast('Kunci dibuat. Selesaikan checkpoint untuk membukanya.');
+      showToast('Key created. Complete the checkpoints to unlock it.');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -425,9 +425,9 @@ export default function KeyPage() {
       const res = await fetch(`${API}/keys/${encodeURIComponent(deleteTarget)}`, { method: 'DELETE', headers });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Gagal menghapus kunci');
+        throw new Error(data.error || 'Failed to delete key');
       }
-      showToast('Kunci berhasil dihapus');
+      showToast('Key deleted successfully');
       setDeleteTarget(null);
       await loadKeys();
     } catch (err) {
@@ -454,16 +454,16 @@ export default function KeyPage() {
       const data = await res.json().catch(() => ({}));
       clearTimeout(timeoutId);
       if (!res.ok || !data.redirectUrl) {
-        throw new Error(data.error || `Gagal mendapatkan link checkpoint (${res.status})`);
+        throw new Error(data.error || `Failed to get checkpoint link (${res.status})`);
       }
       console.log('redirectUrl:', data.redirectUrl);
       setRedirectUrl(data.redirectUrl);
       window.location.assign(data.redirectUrl);
-      // Jaga-jaga: kalau 4 detik kemudian masih di halaman ini, buka kunci tombolnya lagi
+      // Just in case: if we're still on this page 4 seconds later, unlock the button again
       setTimeout(() => setLoading(false), 4000);
     } catch (e) {
       clearTimeout(timeoutId);
-      if (e.name === 'AbortError') setError('Koneksi terlalu lama. Coba lagi.');
+      if (e.name === 'AbortError') setError('Connection timed out. Please try again.');
       else setError(e.message);
       setLoading(false);
     }
@@ -480,7 +480,7 @@ export default function KeyPage() {
         const res = await fetch(`${API}/keys/${encodeURIComponent(value)}/status`, { headers });
         if (res.ok) info = await res.json();
       } catch (err) {
-        console.warn('Gagal cek ke server', err);
+        console.warn('Failed to check with server', err);
       }
 
       const mine = keys.find((k) => k.key === value);
@@ -513,7 +513,7 @@ export default function KeyPage() {
   };
 
   const copy = (text, id) => {
-    try { navigator.clipboard.writeText(text); } catch { /* abaikan */ }
+    try { navigator.clipboard.writeText(text); } catch { /* ignore */ }
     setCopied(id);
     setTimeout(() => setCopied(''), 1800);
   };
@@ -535,7 +535,7 @@ export default function KeyPage() {
   const percent = Math.round((currentProgress.done / currentProgress.total) * 100);
   const canCreate = keys.length < MAX_KEYS;
   const previewTotal = durations.indexOf(Number(duration)) + 1;
-  const deviceText = (n, max) => `${n}/${max === 0 ? '∞' : max} perangkat`;
+  const deviceText = (n, max) => `${n}/${max === 0 ? '∞' : max} devices`;
 
   return (
     <div className="min-h-screen bg-[#060b10] text-white">
@@ -549,13 +549,13 @@ export default function KeyPage() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
           <div className="bg-[#0d1319] border border-white/10 rounded-xl p-5 w-full max-w-sm">
-            <h3 className="text-sm font-semibold mb-2">Hapus kunci?</h3>
+            <h3 className="text-sm font-semibold mb-2">Delete key?</h3>
             <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-              Kunci ini akan dihapus permanen dan kuota Anda kembali.
+              This key will be permanently deleted and your quota will be restored.
             </p>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 rounded-md border border-white/10 text-gray-300 text-xs hover:bg-white/5 transition-colors">Batal</button>
-              <button onClick={confirmDelete} disabled={loading} className="px-3 py-1.5 rounded-md bg-red-500/20 text-red-400 border border-red-500/30 text-xs hover:bg-red-500/30 transition-colors disabled:opacity-50">{loading ? 'Menghapus...' : 'Ya, hapus'}</button>
+              <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 rounded-md border border-white/10 text-gray-300 text-xs hover:bg-white/5 transition-colors">Cancel</button>
+              <button onClick={confirmDelete} disabled={loading} className="px-3 py-1.5 rounded-md bg-red-500/20 text-red-400 border border-red-500/30 text-xs hover:bg-red-500/30 transition-colors disabled:opacity-50">{loading ? 'Deleting...' : 'Yes, delete'}</button>
             </div>
           </div>
         </div>
@@ -567,20 +567,20 @@ export default function KeyPage() {
         {error && <div className="mb-5 text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>}
 
         {booting ? (
-          <div className="py-20 text-center text-sm text-gray-500 animate-pulse">Memuat...</div>
+          <div className="py-20 text-center text-sm text-gray-500 animate-pulse">Loading...</div>
         ) : (
           <>
             {/* GET KEY */}
             {tab === 'get' && (
               <div>
-                <h1 className="text-3xl font-bold mb-2">Dapatkan kunci gratis</h1>
-                <p className="text-sm text-gray-400 mb-8">Pilih durasi, lalu selesaikan checkpoint untuk membuka kunci BOKHUB.</p>
+                <h1 className="text-3xl font-bold mb-2">Get your free key</h1>
+                <p className="text-sm text-gray-400 mb-8">Choose a duration, then complete the checkpoints to unlock your BOKHUB key.</p>
 
-                <label className="block text-sm font-semibold mb-3">Durasi kunci</label>
+                <label className="block text-sm font-semibold mb-3">Key duration</label>
                 <div className="grid grid-cols-5 gap-2 mb-8">
                   {durations.map((d, i) => (
                     <button key={d} onClick={() => setDuration(d)} className={`flex flex-col items-center py-3 rounded-lg border transition-colors ${duration === d ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white' : 'border-white/10 text-gray-400 hover:border-white/30'}`}>
-                      <span className="text-sm font-semibold">{d} jam</span>
+                      <span className="text-sm font-semibold">{d} hrs</span>
                       <span className="text-[10px] text-gray-500 mt-0.5">{i + 1 + (d === DISCORD_DURATION ? 1 : 0)} CP</span>
                     </button>
                   ))}
@@ -590,8 +590,8 @@ export default function KeyPage() {
                 <div className="mb-8"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
                 <div className="mb-8"><CheckpointPlan total={previewTotal} provider={provider} discord={{ enabled: Number(duration) === DISCORD_DURATION }} /></div>
 
-                <PrimaryButton onClick={generateKey} disabled={loading || !canCreate}>{loading ? 'Memproses...' : canCreate ? 'Buat kunci sekarang' : `Batas ${MAX_KEYS} kunci aktif tercapai`}</PrimaryButton>
-                <p className="text-[11px] text-gray-500 mt-3 text-center">{keys.length}/{MAX_KEYS} kunci aktif</p>
+                <PrimaryButton onClick={generateKey} disabled={loading || !canCreate}>{loading ? 'Processing...' : canCreate ? 'Create key now' : `Active key limit reached (${MAX_KEYS})`}</PrimaryButton>
+                <p className="text-[11px] text-gray-500 mt-3 text-center">{keys.length}/{MAX_KEYS} active keys</p>
               </div>
             )}
 
@@ -600,16 +600,16 @@ export default function KeyPage() {
               <div>
                 <div className="flex items-end justify-between mb-5">
                   <div>
-                    <h1 className="text-3xl font-bold mb-2">Kunci saya</h1>
-                    <p className="text-sm text-gray-400">{keys.length}/{MAX_KEYS} kunci aktif</p>
+                    <h1 className="text-3xl font-bold mb-2">My keys</h1>
+                    <p className="text-sm text-gray-400">{keys.length}/{MAX_KEYS} active keys</p>
                   </div>
-                  <button onClick={() => switchTab('get')} disabled={!canCreate} className="text-xs px-3 py-1.5 rounded-md border border-[#8bff5e]/40 text-[#8bff5e] hover:bg-[#8bff5e]/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">+ Kunci baru</button>
+                  <button onClick={() => switchTab('get')} disabled={!canCreate} className="text-xs px-3 py-1.5 rounded-md border border-[#8bff5e]/40 text-[#8bff5e] hover:bg-[#8bff5e]/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">+ New key</button>
                 </div>
 
                 {keys.length === 0 ? (
                   <div className="border border-dashed border-white/10 rounded-xl py-14 text-center">
-                    <p className="text-sm text-gray-400 mb-4">Belum ada kunci.</p>
-                    <button onClick={() => switchTab('get')} className="text-xs px-4 py-2 rounded-md bg-[#8bff5e] text-black font-semibold hover:bg-[#7be652] transition-colors">Buat kunci pertama</button>
+                    <p className="text-sm text-gray-400 mb-4">No keys yet.</p>
+                    <button onClick={() => switchTab('get')} className="text-xs px-4 py-2 rounded-md bg-[#8bff5e] text-black font-semibold hover:bg-[#7be652] transition-colors">Create your first key</button>
                   </div>
                 ) : (
                   <>
@@ -625,11 +625,11 @@ export default function KeyPage() {
                             </span>
                             <div className="flex-1 min-w-0">
                               <p className={`text-[11px] break-all ${isReady ? 'font-mono text-white' : 'text-gray-400'}`}>{isReady ? k.key : HIDDEN_TEXT}</p>
-                              <p className="text-[10px] text-gray-500 mt-0.5">{k.durationHours} jam · s/d {formatExpiry(k.expiresAt)}</p>
+                              <p className="text-[10px] text-gray-500 mt-0.5">{k.durationHours} hrs · until {formatExpiry(k.expiresAt)}</p>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className={`text-[10px] ${isReady ? 'text-[#8bff5e]' : 'text-gray-400'}`}>{isReady ? 'Siap' : 'Proses'}</span>
-                              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(k.key); }} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Hapus kunci"><TrashIcon className="w-3.5 h-3.5" /></button>
+                              <span className={`text-[10px] ${isReady ? 'text-[#8bff5e]' : 'text-gray-400'}`}>{isReady ? 'Ready' : 'In progress'}</span>
+                              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(k.key); }} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Delete key"><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                           </div>
                         );
@@ -639,8 +639,8 @@ export default function KeyPage() {
                     {current && (
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-gray-400">Progres</span>
-                          <span className="text-xs text-gray-400">{currentProgress.done}/{currentProgress.total} selesai</span>
+                          <span className="text-xs text-gray-400">Progress</span>
+                          <span className="text-xs text-gray-400">{currentProgress.done}/{currentProgress.total} completed</span>
                         </div>
                         <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mb-5">
                           <div className="h-full bg-[#8bff5e] transition-all duration-700" style={{ width: `${percent}%` }} />
@@ -650,10 +650,10 @@ export default function KeyPage() {
                           <div className="rounded-lg border border-[#8bff5e]/20 bg-[#8bff5e]/5 p-3 mb-5">
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono text-xs text-[#8bff5e] break-all select-all">{current.key}</span>
-                              <button onClick={() => copy(current.key, 'key')} className="shrink-0 text-[11px] text-gray-200 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded transition-colors">{copied === 'key' ? 'Tersalin ✓' : 'Salin'}</button>
+                              <button onClick={() => copy(current.key, 'key')} className="shrink-0 text-[11px] text-gray-200 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded transition-colors">{copied === 'key' ? 'Copied ✓' : 'Copy'}</button>
                             </div>
-                            <p className="text-[11px] text-gray-400 mt-2">Berlaku sampai {formatExpiry(current.expiresAt)}</p>
-                            <p className="text-[11px] text-gray-500 mt-1">Perangkat terpakai: {deviceText(current.deviceCount ?? 0, current.maxDevices ?? 1)}</p>
+                            <p className="text-[11px] text-gray-400 mt-2">Valid until {formatExpiry(current.expiresAt)}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">Devices used: {deviceText(current.deviceCount ?? 0, current.maxDevices ?? 1)}</p>
                           </div>
                         )}
 
@@ -664,19 +664,19 @@ export default function KeyPage() {
                         {!ready && !providersDone && (
                           <>
                             <div className="mb-3"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
-                            <PrimaryButton onClick={() => goToProvider(current.key)} disabled={loading}>{loading ? 'Mengalihkan...' : `Selesaikan checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
-                            <p className="text-[11px] text-gray-500 mt-3 text-center">Anda akan diarahkan ke {provider} dan otomatis kembali ke halaman ini setelah selesai.</p>
+                            <PrimaryButton onClick={() => goToProvider(current.key)} disabled={loading}>{loading ? 'Redirecting...' : `Complete checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
+                            <p className="text-[11px] text-gray-500 mt-3 text-center">You will be redirected to {provider} and automatically brought back to this page when you are done.</p>
                             {redirectUrl && (
                               <p className="text-[11px] text-gray-400 mt-2 text-center">
-                                Tidak berpindah otomatis?{' '}
-                                <a href={redirectUrl} className="text-[#8bff5e] underline">Klik di sini</a>
+                                Not redirecting automatically?{' '}
+                                <a href={redirectUrl} className="text-[#8bff5e] underline">Click here</a>
                               </p>
                             )}
                           </>
                         )}
 
                         {!ready && providersDone && hasDiscord && (
-                          <p className="text-xs text-gray-400 text-center">{discordKey === current.key && discordCount !== null ? `Discord akan terbuka dalam ${discordCount} detik. Tetap di halaman ini.` : 'Tinggal satu langkah: klik "Join Discord" di atas.'}</p>
+                          <p className="text-xs text-gray-400 text-center">{discordKey === current.key && discordCount !== null ? `Discord will open in ${discordCount} seconds. Stay on this page.` : 'One step left: click "Join Discord" above.'}</p>
                         )}
                       </div>
                     )}
@@ -688,44 +688,44 @@ export default function KeyPage() {
             {/* CHECK KEY */}
             {tab === 'check' && (
               <div>
-                <h1 className="text-3xl font-bold mb-2">Cek kunci</h1>
-                <p className="text-sm text-gray-400 mb-8">Tempel kunci untuk melihat status dan masa berlakunya.</p>
+                <h1 className="text-3xl font-bold mb-2">Check key</h1>
+                <p className="text-sm text-gray-400 mb-8">Paste a key to see its status and expiration.</p>
 
                 <div className="flex gap-2 mb-5">
-                  <input value={checkInput} onChange={(e) => setCheckInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && checkKey()} placeholder="Masukkan kunci Anda" spellCheck={false} className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 focus:border-[#8bff5e]/60 outline-none rounded-lg px-3.5 py-2.5 text-sm font-mono placeholder:font-sans placeholder:text-gray-500" />
-                  <button onClick={checkKey} disabled={checking || !checkInput.trim()} className="shrink-0 bg-[#8bff5e] hover:bg-[#7be652] text-black font-semibold px-5 rounded-lg text-sm transition-colors disabled:opacity-50">{checking ? 'Memeriksa...' : 'Cek'}</button>
+                  <input value={checkInput} onChange={(e) => setCheckInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && checkKey()} placeholder="Enter your key" spellCheck={false} className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 focus:border-[#8bff5e]/60 outline-none rounded-lg px-3.5 py-2.5 text-sm font-mono placeholder:font-sans placeholder:text-gray-500" />
+                  <button onClick={checkKey} disabled={checking || !checkInput.trim()} className="shrink-0 bg-[#8bff5e] hover:bg-[#7be652] text-black font-semibold px-5 rounded-lg text-sm transition-colors disabled:opacity-50">{checking ? 'Checking...' : 'Check'}</button>
                 </div>
 
                 {checkResult && !checkResult.found && (
                   <div className="rounded-lg border border-red-400/30 bg-red-400/5 p-4 text-sm text-red-300">
-                    <p className="font-semibold mb-1">Kunci tidak ditemukan.</p>
-                    <p className="text-xs">Pastikan penulisan sudah benar, atau kunci mungkin sudah dihapus/expired.</p>
+                    <p className="font-semibold mb-1">Key not found.</p>
+                    <p className="text-xs">Make sure you typed it correctly. The key may also have been deleted or expired.</p>
                   </div>
                 )}
 
                 {checkResult?.found && (
                   <div className={`rounded-lg border p-4 ${checkResult.status === 'expired' ? 'border-red-400/30 bg-red-400/5 text-red-400' : checkResult.status === 'ready' ? 'border-[#8bff5e]/30 bg-[#8bff5e]/5 text-[#8bff5e]' : 'border-amber-300/30 bg-amber-300/5 text-amber-300'}`}>
                     <p className="text-sm font-semibold mb-3">
-                      {checkResult.status === 'expired' ? '❌ Kunci Kedaluwarsa' : checkResult.status === 'ready' ? '✅ Kunci Valid & Siap Dipakai' : '⏳ Kunci Belum Selesai Checkpoint'}
+                      {checkResult.status === 'expired' ? '❌ Key Expired' : checkResult.status === 'ready' ? '✅ Key Valid & Ready to Use' : '⏳ Checkpoints Not Completed Yet'}
                     </p>
                     <p className={`text-xs break-all mb-3 ${checkResult.status === 'ready' ? 'font-mono text-white' : 'text-gray-300'}`}>{checkResult.status === 'ready' ? checkResult.key : HIDDEN_TEXT}</p>
                     <dl className="grid grid-cols-2 gap-y-2 text-xs">
                       {checkResult.durationHours != null && (
-                        <><dt className="text-gray-400">Durasi</dt><dd className="text-white text-right">{checkResult.durationHours} jam</dd></>
+                        <><dt className="text-gray-400">Duration</dt><dd className="text-white text-right">{checkResult.durationHours} hrs</dd></>
                       )}
                       {checkResult.expiresAt && (
-                        <><dt className="text-gray-400">Berlaku sampai</dt><dd className="text-white text-right">{formatExpiry(checkResult.expiresAt)}</dd></>
+                        <><dt className="text-gray-400">Valid until</dt><dd className="text-white text-right">{formatExpiry(checkResult.expiresAt)}</dd></>
                       )}
                       {checkResult.total != null && checkResult.status !== 'expired' && (
-                        <><dt className="text-gray-400">Checkpoint</dt><dd className="text-white text-right">{checkResult.done}/{checkResult.total}</dd></>
+                        <><dt className="text-gray-400">Checkpoints</dt><dd className="text-white text-right">{checkResult.done}/{checkResult.total}</dd></>
                       )}
                       {checkResult.status !== 'expired' && (
                         <>
-                          <dt className="text-gray-400">Perangkat (HWID)</dt>
+                          <dt className="text-gray-400">Devices (HWID)</dt>
                           <dd className={`text-right font-semibold ${checkResult.devices > 0 ? 'text-[#8bff5e]' : 'text-amber-300'}`}>
                             {checkResult.devices > 0
                               ? deviceText(checkResult.devices, checkResult.maxDevices)
-                              : `Belum terkunci (maks ${checkResult.maxDevices === 0 ? '∞' : checkResult.maxDevices})`}
+                              : `Not locked yet (max ${checkResult.maxDevices === 0 ? '∞' : checkResult.maxDevices})`}
                           </dd>
                         </>
                       )}
@@ -738,13 +738,13 @@ export default function KeyPage() {
             {/* SCRIPT */}
             {tab === 'script' && (
               <div>
-                <h1 className="text-3xl font-bold mb-2">Skrip pemuat</h1>
-                <p className="text-sm text-gray-400 mb-8">Salin skrip, tempelkan di executor, lalu masukkan kunci Anda di jendela BOKHUB.</p>
+                <h1 className="text-3xl font-bold mb-2">Loader script</h1>
+                <p className="text-sm text-gray-400 mb-8">Copy the script, paste it into your executor, then enter your key in the BOKHUB window.</p>
 
                 <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 mb-4">
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-sm font-semibold">Script</span>
-                    <button onClick={() => copy(LOADER, 'script')} className="text-[11px] bg-white/10 hover:bg-white/20 text-gray-200 px-2.5 py-1 rounded transition-colors">{copied === 'script' ? 'Tersalin ✓' : 'Salin skrip'}</button>
+                    <button onClick={() => copy(LOADER, 'script')} className="text-[11px] bg-white/10 hover:bg-white/20 text-gray-200 px-2.5 py-1 rounded transition-colors">{copied === 'script' ? 'Copied ✓' : 'Copy script'}</button>
                   </div>
                   <div className="bg-black/50 rounded-lg p-3 font-mono text-[11px] text-[#8bff5e] break-all border border-white/5 select-all">{LOADER}</div>
                 </div>
@@ -752,10 +752,10 @@ export default function KeyPage() {
                 <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] p-4 transition-colors">
                   <DiscordIcon className="w-5 h-5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">Gabung Discord BOKHUB</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">Update skrip, bantuan, dan info terbaru.</p>
+                    <p className="text-sm font-semibold">Join the BOKHUB Discord</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Script updates, support, and the latest news.</p>
                   </div>
-                  <span className="text-[11px] text-gray-400">Buka</span>
+                  <span className="text-[11px] text-gray-400">Open</span>
                 </a>
               </div>
             )}
@@ -764,7 +764,7 @@ export default function KeyPage() {
 
         <div className="mt-14">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between gap-4">
-            <p className="text-xs text-gray-400 leading-relaxed">Ada pertanyaan? Cek FAQ atau tanya langsung di Discord.</p>
+            <p className="text-xs text-gray-400 leading-relaxed">Have questions? Check the FAQ or ask directly on Discord.</p>
             <div className="flex gap-2 shrink-0">
               <Link to="#" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">FAQ</Link>
               <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">Discord</a>

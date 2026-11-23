@@ -7,7 +7,7 @@ const GOLD = '#f5c451';
 /* ---------- client id ---------- */
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* abaikan */ } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 const getClientId = () => {
   let id = store.get('bokhub_client_id');
@@ -23,15 +23,15 @@ const headers = { 'Content-Type': 'application/json', 'x-client-id': getClientId
 
 /* ---------- data ---------- */
 const PLANS = [
-  { id: 'weekly', title: '7 hari', note: 'Untuk mencoba' },
-  { id: 'monthly', title: '30 hari', note: 'Untuk pemakaian rutin' },
-  { id: 'lifetime', title: 'Lifetime', note: 'Tanpa batas waktu' },
+  { id: 'weekly', title: '7 days', note: 'For trying it out' },
+  { id: 'monthly', title: '30 days', note: 'For regular use' },
+  { id: 'lifetime', title: 'Lifetime', note: 'No time limit' },
 ];
-const PLAN_LABEL = { weekly: '7 hari', monthly: '30 hari', lifetime: 'Lifetime' };
+const PLAN_LABEL = { weekly: '7 days', monthly: '30 days', lifetime: 'Lifetime' };
 
 const fmt = (iso) =>
   iso
-    ? new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? new Date(iso).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '';
 
 /* ---------- icons ---------- */
@@ -76,7 +76,7 @@ export default function PremiumPage() {
   const loadMine = async () => {
     const res = await fetch(`${API}/premium/mine`, { headers });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Gagal memuat kunci premium');
+    if (!res.ok) throw new Error(data.error || 'Failed to load premium keys');
     setMyKeys(data.keys || []);
     setFreeMode(data.freeMode !== false);
   };
@@ -88,8 +88,8 @@ export default function PremiumPage() {
   }, []);
 
   const claim = async () => {
-    // ===== PENGAMBILAN DITUTUP SEMENTARA =====
-    // Untuk membuka lagi: hapus tanda // di depan "return;" di bawah (atau hapus barisnya).
+    // ===== CLAIMING IS TEMPORARILY CLOSED =====
+    // To reopen it: delete the "return;" line below.
     return;
     // eslint-disable-next-line no-unreachable
     setLoading(true);
@@ -101,11 +101,11 @@ export default function PremiumPage() {
         body: JSON.stringify({ plan, name }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Gagal klaim premium');
+      if (!res.ok) throw new Error(data.error || 'Failed to claim premium');
       store.set('bokhub_premium_name', name.trim());
-      setFresh(data.key); // Kunci baru
-      await loadMine(); // Reload daftar
-      showToast('Kunci premium berhasil dibuat!');
+      setFresh(data.key); // New key
+      await loadMine(); // Reload the list
+      showToast('Premium key created successfully!');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -118,16 +118,16 @@ export default function PremiumPage() {
     try {
       const res = await fetch(`${API}/premium/${encodeURIComponent(key)}/reset-hwid`, { method: 'POST', headers });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error + (data.nextResetAt ? ` (bisa lagi ${fmt(data.nextResetAt)})` : ''));
+      if (!res.ok) throw new Error(data.error + (data.nextResetAt ? ` (available again ${fmt(data.nextResetAt)})` : ''));
       await loadMine();
-      showToast('Perangkat direset');
+      showToast('Device reset');
     } catch (e) {
       setError(e.message);
     }
   };
 
   const copy = (text, id) => {
-    try { navigator.clipboard.writeText(text); } catch { /* abaikan */ }
+    try { navigator.clipboard.writeText(text); } catch { /* ignore */ }
     setCopied(id);
     setTimeout(() => setCopied(''), 1800);
   };
@@ -151,28 +151,27 @@ export default function PremiumPage() {
             style={{ color: GOLD, borderColor: `${GOLD}55`, background: `${GOLD}12` }}
           >
             <GemIcon className="w-3.5 h-3.5" />
-            Premium BOKHUB
+            BOKHUB Premium
           </div>
-          <h1 className="text-4xl md:text-5xl font-extrabold leading-tight mb-4">Lewati semua checkpoint.</h1>
+          <h1 className="text-4xl md:text-5xl font-extrabold leading-tight mb-4">Skip every checkpoint.</h1>
           <p className="text-gray-400 leading-relaxed">
-            Ambil kunci 7 hari, 30 hari, atau lifetime langsung dari sini. Tanpa iklan, tanpa langkah tambahan, dan
-            dengan akses ke script eksklusif.
+            Get a 7-day, 30-day, or lifetime key. No ads, no extra steps, and access to exclusive scripts.
           </p>
         </header>
 
-        {/* KLAIM */}
+        {/* CLAIM */}
         <section className="mt-12 max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold mb-1 text-center">Pilih paket</h2>
+          <h2 className="text-xl font-semibold mb-1 text-center">Choose a plan</h2>
 
-          {/* ===== TEKS ASLI (aktifkan lagi dengan menggantinya dengan teks "ditutup" di bawah) =====
+          {/* ===== ORIGINAL TEXT (re-enable by replacing the "closed" text below) =====
           <p className="text-sm text-gray-400 mb-6 text-center">
             {freeMode
-              ? 'Selama masa pembukaan, semua paket gratis. Cukup isi nama Anda.'
-              : 'Pembayaran belum tersedia. Segera hadir.'}
+              ? 'During the launch period, all plans are free. Just enter your name.'
+              : 'Payments are not available yet. Coming soon.'}
           </p>
           */}
           <p className="text-sm text-gray-400 mb-6 text-center">
-            Pengambilan premium sedang ditutup sementara. Segera hadir.
+            Premium isn't available on the website yet, but you can buy it on our Discord server.
           </p>
 
           <div className="grid sm:grid-cols-3 gap-3 mb-6">
@@ -190,7 +189,7 @@ export default function PremiumPage() {
                 >
                   {featured && (
                     <span className="absolute -top-2.5 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full text-black" style={{ background: GOLD }}>
-                      Sekali ambil
+                      One-time
                     </span>
                   )}
                   <div className="flex items-center justify-between mb-3">
@@ -204,33 +203,32 @@ export default function PremiumPage() {
                   </div>
                   <p className="text-xs text-gray-400 mb-3">{p.note}</p>
                   <div className="flex items-baseline gap-2">
-                    {/* ===== LABEL ASLI =====
-                    <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Gratis</span>
-                    <span className="text-[11px] text-gray-500">harga resmi menyusul</span>
+                    {/* ===== ORIGINAL LABEL =====
+                    <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Free</span>
+                    <span className="text-[11px] text-gray-500">official pricing coming soon</span>
                     */}
-                    <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Segera hadir</span>
+                    <span className="text-2xl font-extrabold" style={{ color: GOLD }}>Via Discord</span>
                   </div>
                 </button>
               );
             })}
           </div>
 
-          <label className="block text-sm font-semibold mb-2" htmlFor="premium-name">Nama</label>
+          {error && (
+            <div className="mb-4 text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>
+          )}
+
+          {/* ===== ORIGINAL FORM & BUTTON (re-enable by uncommenting this and removing the "Buy on Discord" button) =====
+          <label className="block text-sm font-semibold mb-2" htmlFor="premium-name">Name</label>
           <input
             id="premium-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && nameOk && !loading && freeMode && claim()}
             maxLength={32}
-            placeholder="Nama Anda atau username Roblox"
+            placeholder="Your name or Roblox username"
             className="w-full bg-white/[0.03] border border-white/10 focus:border-[#f5c451]/70 outline-none rounded-lg px-3.5 py-2.5 text-sm placeholder:text-gray-500 mb-4"
           />
-
-          {error && (
-            <div className="mb-4 text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>
-          )}
-
-          {/* ===== TOMBOL ASLI (aktifkan lagi dengan membuka comment ini dan menghapus tombol "Belum tersedia") =====
           <button
             onClick={claim}
             disabled={loading || !nameOk || !freeMode}
@@ -238,23 +236,25 @@ export default function PremiumPage() {
             style={{ background: GOLD }}
           >
             <BoltIcon className="w-4 h-4" />
-            {loading ? 'Memproses...' : `Dapatkan ${PLAN_LABEL[plan]} sekarang`}
+            {loading ? 'Processing...' : `Get ${PLAN_LABEL[plan]} now`}
           </button>
           */}
-          <button
-            disabled
-            className="w-full flex items-center justify-center gap-2 text-black font-semibold py-3 rounded-lg text-sm opacity-50 cursor-not-allowed"
+          <a
+            href={DISCORD_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center justify-center gap-2 text-black font-semibold py-3 rounded-lg text-sm transition-opacity hover:opacity-90"
             style={{ background: GOLD }}
           >
-            <LockIcon className="w-4 h-4" />
-            Belum tersedia
-          </button>
+            <BoltIcon className="w-4 h-4" />
+            Buy {PLAN_LABEL[plan]} on Discord
+          </a>
         </section>
 
-        {/* KUNCI PREMIUM SAYA (TAMPIL DI SINI SETELAH DAPAT) */}
+        {/* MY PREMIUM KEYS (SHOWN HERE ONCE OBTAINED) */}
         {!booting && myKeys.length > 0 && (
           <section className="mt-12 max-w-2xl mx-auto">
-            <h2 className="text-xl font-semibold mb-4 text-center">Kunci Premium Anda</h2>
+            <h2 className="text-xl font-semibold mb-4 text-center">Your Premium Keys</h2>
             <div className="space-y-3">
               {myKeys.map((k) => (
                 <div
@@ -268,27 +268,27 @@ export default function PremiumPage() {
                       onClick={() => copy(k.key, k.key)}
                       className="shrink-0 text-[11px] bg-white/10 hover:bg-white/20 text-gray-200 px-3 py-1.5 rounded transition-colors"
                     >
-                      {copied === k.key ? 'Tersalin ✓' : 'Salin Kunci'}
+                      {copied === k.key ? 'Copied ✓' : 'Copy Key'}
                     </button>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-400">
-                    <span>Paket: <span className="text-white font-medium">{PLAN_LABEL[k.plan] || k.plan}</span></span>
-                    <span>Atas nama: <span className="text-white font-medium">{k.ownerName}</span></span>
+                    <span>Plan: <span className="text-white font-medium">{PLAN_LABEL[k.plan] || k.plan}</span></span>
+                    <span>Owner: <span className="text-white font-medium">{k.ownerName}</span></span>
                     <span>
-                      Berlaku: <span className="text-white font-medium">{k.plan === 'lifetime' ? 'Selamanya' : `sampai ${fmt(k.expiresAt)}`}</span>
+                      Valid: <span className="text-white font-medium">{k.plan === 'lifetime' ? 'Forever' : `until ${fmt(k.expiresAt)}`}</span>
                     </span>
                     <span className="ml-auto flex items-center gap-2">
                       <span className="flex items-center gap-1">
                         <LockIcon className="w-3 h-3" />
-                        {k.hwidLocked ? 'Terkunci di 1 perangkat' : 'Belum dipakai'}
+                        {k.hwidLocked ? 'Locked to 1 device' : 'Not used yet'}
                       </span>
                       <button
                         onClick={() => resetDevice(k.key)}
                         disabled={!k.hwidLocked || !!k.nextResetAt}
-                        title={k.nextResetAt ? `Bisa reset lagi ${fmt(k.nextResetAt)}` : 'Reset perangkat'}
+                        title={k.nextResetAt ? `Can reset again ${fmt(k.nextResetAt)}` : 'Reset device'}
                         className="px-2.5 py-1 rounded border border-white/15 text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
                       >
-                        Reset perangkat
+                        Reset device
                       </button>
                     </span>
                   </div>
@@ -298,16 +298,16 @@ export default function PremiumPage() {
           </section>
         )}
 
-        {/* BANTUAN */}
+        {/* HELP */}
         <div className="text-center mt-16">
-          <p className="text-sm text-gray-400 mb-3">Ada pertanyaan soal Premium?</p>
+          <p className="text-sm text-gray-400 mb-3">Questions about Premium?</p>
           <a
             href={DISCORD_URL}
             target="_blank"
             rel="noreferrer"
             className="inline-block bg-white/10 hover:bg-white/20 text-white font-medium py-2.5 px-6 rounded-lg transition-colors text-sm"
           >
-            Tanya di Discord
+            Ask on Discord
           </a>
         </div>
       </div>
