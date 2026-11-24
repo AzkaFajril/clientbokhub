@@ -8,8 +8,7 @@ const CHECKPOINTS_BY_DURATION = {
   6: 2,
   12: 3,
 };
-const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()
-"))()`;
+const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
 
 const PROVIDERS = [
@@ -17,7 +16,7 @@ const PROVIDERS = [
   { id: 'Work.ink', available: false },
 ];
 const AVAILABLE_PROVIDERS = PROVIDERS.filter((p) => p.available).map((p) => p.id);
-// akhjdkasjd
+
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
@@ -47,7 +46,7 @@ const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
 );
 const CheckIcon = ({ className }) => <Svg className={className} sw={3}><path d="M5 13l4 4L19 7" /></Svg>;
 const TrashIcon = ({ className }) => (
-  <Svg className={className}>
+  <Svg className}>
     <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </Svg>
 );
