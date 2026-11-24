@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { API } from '../utils/api';
 
 const MAX_KEYS = 3;
-// HANYA 6 JAM DAN 12 JAM[cite: 2]
 const durations = [6, 12];
 const CHECKPOINTS_BY_DURATION = {
   6: 2,
@@ -11,9 +10,7 @@ const CHECKPOINTS_BY_DURATION = {
 };
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
-const hasDiscordStep = () => false; // Tidak ada checkpoint Discord
 
-// Providers that are already active on the backend. Add 'Work.ink' here once the backend is ready.
 const PROVIDERS = [
   { id: 'LootLabs', available: true },
   { id: 'Work.ink', available: false },
@@ -38,8 +35,8 @@ const getClientId = () => {
 const CLIENT_ID = getClientId();
 const headers = { 'Content-Type': 'application/json', 'x-client-id': CLIENT_ID };
 
-// Until the checkpoints are finished, the key is not shown at all
 const HIDDEN_TEXT = 'Hidden until checkpoints are completed';
+const getItemId = (k) => k?.keyId || k?.maskedKey || k?.key || '';
 
 /* ---------- Icons ---------- */
 const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
@@ -243,7 +240,7 @@ export default function KeyPage() {
     setError('');
   };
 
-  const loadKeys = async (preferred) => {
+  const loadKeys = async (preferredId) => {
     const res = await fetch(`${API}/keys/mine`, { headers });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Failed to load keys');
@@ -256,10 +253,10 @@ export default function KeyPage() {
 
     setKeys(sorted);
     setSelected((cur) => {
-      const want = preferred || cur;
-      if (want && sorted.some((k) => k.key === want)) return want;
+      const want = preferredId || cur;
+      if (want && sorted.some((k) => getItemId(k) === want)) return want;
       const pending = sorted.find((k) => k.status !== 'ready');
-      return (pending || sorted[0] || {}).key || null;
+      return getItemId(pending || sorted[0]) || null;
     });
     return sorted;
   };
@@ -270,30 +267,42 @@ export default function KeyPage() {
 
     const init = async () => {
       const success = searchParams.get('checkpoint_success');
-      const urlKey = searchParams.get('key');
+      const paramKeyId = searchParams.get('keyId');
       const token = searchParams.get('token');
 
       try {
-        if (success === 'true' && urlKey && token) {
+        if (success === 'true' && token) {
           setTab('mine');
           try {
-            const res = await fetch(`${API}/keys/${encodeURIComponent(urlKey)}/checkpoint`, {
+            const list = await loadKeys(paramKeyId);
+            const targetId =
+              paramKeyId ||
+              store.get('bokhub_pending_key_id') ||
+              getItemId(list.find((k) => k.status !== 'ready') || list[0]);
+
+            if (!targetId) {
+              throw new Error('Active key not found for this checkpoint');
+            }
+
+            const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
               method: 'POST',
               headers,
               body: JSON.stringify({ token }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Checkpoint rejected');
+
+            store.set('bokhub_pending_key_id', '');
             showToast(
               data.status === 'ready'
                 ? 'All checkpoints completed! Your key is ready.'
                 : `Checkpoint ${data.checkpointsCompleted} completed ✓`
             );
+            await loadKeys(targetId);
           } catch (e) {
             setError(e.message);
           }
           setSearchParams({}, { replace: true });
-          await loadKeys(urlKey);
         } else {
           const list = await loadKeys();
           if (list.length > 0) setTab('mine');
@@ -327,7 +336,8 @@ export default function KeyPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed to create key (${res.status})`);
       store.set('bokhub_provider', provider);
-      await loadKeys(data.key);
+      const createdId = getItemId(data);
+      await loadKeys(createdId);
       setTab('mine');
       showToast('Key created. Complete the checkpoints to unlock it.');
     } catch (e) {
@@ -358,14 +368,19 @@ export default function KeyPage() {
     }
   };
 
-  const goToProvider = async (keyString) => {
+  const goToProvider = async (keyItem) => {
+    const targetId = getItemId(keyItem);
+    if (!targetId) return;
+
     setLoading(true);
     setError('');
     setRedirectUrl('');
+    store.set('bokhub_pending_key_id', targetId);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(`${API}/keys/${encodeURIComponent(keyString)}/redirect`, {
+      const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/redirect`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ provider }),
@@ -376,7 +391,6 @@ export default function KeyPage() {
       if (!res.ok || !data.redirectUrl) {
         throw new Error(data.error || `Failed to get checkpoint link (${res.status})`);
       }
-      console.log('redirectUrl:', data.redirectUrl);
       setRedirectUrl(data.redirectUrl);
       window.location.assign(data.redirectUrl);
       setTimeout(() => setLoading(false), 4000);
@@ -413,7 +427,7 @@ export default function KeyPage() {
 
         setCheckResult({
           found: true,
-          key: value,
+          key: info.key || (isReady ? value : null),
           status: expired ? 'expired' : isReady ? 'ready' : 'pending',
           durationHours: info.durationHours,
           expiresAt: info.expiresAt,
@@ -432,18 +446,19 @@ export default function KeyPage() {
   };
 
   const copy = (text, id) => {
+    if (!text) return;
     try { navigator.clipboard.writeText(text); } catch { /* ignore */ }
     setCopied(id);
     setTimeout(() => setCopied(''), 1800);
   };
 
-  const isReadyKey = (k) => k.status === 'ready';
+  const isReadyKey = (k) => k.status === 'ready' && !!k.key;
   const progressOf = (k) => ({
     done: k.checkpointsCompleted || 0,
     total: k.checkpointsRequired || CHECKPOINTS_BY_DURATION[Number(k.durationHours)] || 2,
   });
 
-  const current = keys.find((k) => k.key === selected) || null;
+  const current = keys.find((k) => getItemId(k) === selected) || null;
   const ready = current ? isReadyKey(current) : false;
   const providersDone = current ? current.checkpointsCompleted >= current.checkpointsRequired : false;
   const currentProgress = current ? progressOf(current) : { done: 0, total: 2 };
@@ -539,11 +554,12 @@ export default function KeyPage() {
                   <>
                     <div className="space-y-2 mb-8">
                       {keys.map((k) => {
+                        const itemId = getItemId(k);
                         const isReady = isReadyKey(k);
                         const prog = progressOf(k);
-                        const active = k.key === selected;
+                        const active = itemId === selected;
                         return (
-                          <div key={k.key} onClick={() => { setSelected(k.key); setError(''); }} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${active ? 'border-[#8bff5e]/60 bg-[#8bff5e]/5' : 'border-white/10 hover:border-white/30'}`}>
+                          <div key={itemId} onClick={() => { setSelected(itemId); setError(''); }} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${active ? 'border-[#8bff5e]/60 bg-[#8bff5e]/5' : 'border-white/10 hover:border-white/30'}`}>
                             <span className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 border text-[10px] ${isReady ? 'bg-[#8bff5e] border-[#8bff5e] text-black' : 'border-white/20 text-gray-400'}`}>
                               {isReady ? <CheckIcon className="w-3.5 h-3.5" /> : `${prog.done}/${prog.total}`}
                             </span>
@@ -553,7 +569,7 @@ export default function KeyPage() {
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
                               <span className={`text-[10px] ${isReady ? 'text-[#8bff5e]' : 'text-gray-400'}`}>{isReady ? 'Ready' : 'In progress'}</span>
-                              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(k.key); }} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Delete key"><TrashIcon className="w-3.5 h-3.5" /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(itemId); }} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Delete key"><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                           </div>
                         );
@@ -588,7 +604,7 @@ export default function KeyPage() {
                         {!ready && !providersDone && (
                           <>
                             <div className="mb-3"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
-                            <PrimaryButton onClick={() => goToProvider(current.key)} disabled={loading}>{loading ? 'Redirecting...' : `Complete checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
+                            <PrimaryButton onClick={() => goToProvider(current)} disabled={loading}>{loading ? 'Redirecting...' : `Complete checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
                             <p className="text-[11px] text-gray-500 mt-3 text-center">You will be redirected to {provider} and automatically brought back to this page when you are done.</p>
                             {redirectUrl && (
                               <p className="text-[11px] text-gray-400 mt-2 text-center">
@@ -684,11 +700,17 @@ export default function KeyPage() {
 
         <div className="mt-14">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between gap-4">
-            <p className="text-xs text-gray-400 leading-relaxed">Have questions? Check the FAQ or ask directly on Discord.</p>
-            <div className="flex gap-2 shrink-0">
-              <Link to="#" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">FAQ</Link>
-              <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="bg-white/10 hover:bg-white/20 text-gray-200 text-xs px-3 py-1.5 rounded transition-colors">Discord</a>
-            </div>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              Have questions? Check the FAQ or ask directly on Discord.
+            </p>
+            <a
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 text-xs px-3 py-1.5 rounded-md border border-white/10 text-gray-200 hover:bg-white/5 transition-colors"
+            >
+              Discord
+            </a>
           </div>
         </div>
       </div>
