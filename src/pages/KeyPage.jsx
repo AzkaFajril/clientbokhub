@@ -8,7 +8,8 @@ const CHECKPOINTS_BY_DURATION = {
   6: 2,
   12: 3,
 };
-const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
+const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()
+"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
 
 const PROVIDERS = [
