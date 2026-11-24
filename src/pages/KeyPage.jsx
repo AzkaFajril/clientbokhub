@@ -7,7 +7,7 @@ const MAX_KEYS = 3;
 const durations = [6, 12];
 const CHECKPOINTS_BY_DURATION = {
   6: 2,
-  12: 4,
+  12: 3,
 };
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
