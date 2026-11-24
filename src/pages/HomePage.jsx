@@ -6,7 +6,7 @@ const games = [
 ];
 
 export default function HomePage() {
-  const loaderScript = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
+  const loaderScript = `https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()`;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12 md:py-20">
