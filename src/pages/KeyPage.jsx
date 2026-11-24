@@ -3,12 +3,15 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { API } from '../utils/api';
 
 const MAX_KEYS = 3;
-const durations = [6, 12, 24, 48, 72]; // 6 hours = 1 checkpoint, 12 hours = 2, etc.
+// HANYA 6 JAM DAN 12 JAM[cite: 2]
+const durations = [6, 12];
+const CHECKPOINTS_BY_DURATION = {
+  6: 2,
+  12: 4,
+};
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/SlimexDev/LoaderScript/refs/heads/main/LoaderScript.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
-const DISCORD_DURATION = 24; // only the 24-hour key has the Join Discord step (+1 CP)
-const DISCORD_WAIT = 20; // seconds to wait before Discord opens and the step counts as done
-const hasDiscordStep = (hours) => Number(hours) === DISCORD_DURATION;
+const hasDiscordStep = () => false; // Tidak ada checkpoint Discord
 
 // Providers that are already active on the backend. Add 'Work.ink' here once the backend is ready.
 const PROVIDERS = [
@@ -126,17 +129,13 @@ function TabBar({ tab, setTab, count }) {
   );
 }
 
-function CheckpointPlan({ total, completed = 0, provider, allDone = false, discord }) {
+function CheckpointPlan({ total, completed = 0, provider, allDone = false }) {
   const rows = Array.from({ length: total });
-  const d = discord || {};
-  const counting = d.countdown != null;
-  const dNext = d.enabled && d.unlocked && !d.done && !allDone;
-  const cpCount = total + (d.enabled ? 1 : 0);
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
         <h3 className="text-xl font-semibold">Checkpoint plan</h3>
-        <span className="text-xs text-gray-500">{cpCount} CP</span>
+        <span className="text-xs text-gray-500">{total} CP</span>
       </div>
       <div className="border-t border-white/10">
         {rows.map((_, i) => {
@@ -165,52 +164,6 @@ function CheckpointPlan({ total, completed = 0, provider, allDone = false, disco
             </div>
           );
         })}
-
-        {d.enabled && (
-          <button
-            type="button"
-            onClick={d.onClick}
-            disabled={!dNext || counting || !d.onClick}
-            className={`relative w-full flex items-center gap-4 py-3.5 border-b border-white/10 text-left overflow-hidden transition-colors ${
-              dNext && !counting ? 'hover:bg-white/[0.03] cursor-pointer' : 'cursor-default'
-            }`}
-          >
-            <span
-              className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 border text-xs ${
-                d.done || allDone
-                  ? 'bg-[#8bff5e] border-[#8bff5e] text-black'
-                  : dNext
-                  ? 'border-white/40 text-white'
-                  : 'border-white/10 text-gray-500'
-              }`}
-            >
-              {d.done || allDone ? <CheckIcon className="w-3.5 h-3.5" /> : total + 1}
-            </span>
-            <DiscordIcon />
-            <span
-              className={`text-sm font-semibold ${
-                d.done || allDone ? 'text-[#8bff5e]' : dNext ? 'text-white' : 'text-gray-400'
-              }`}
-            >
-              Join Discord
-            </span>
-            <span className="ml-auto text-[11px] text-gray-500">
-              {d.done || allDone
-                ? 'Completed'
-                : counting
-                ? `Opening in ${d.countdown}s`
-                : dNext
-                ? 'Click to start'
-                : 'Locked'}
-            </span>
-            {counting && (
-              <span
-                className="absolute left-0 bottom-0 h-[2px] bg-indigo-400 transition-all duration-1000 ease-linear"
-                style={{ width: `${((DISCORD_WAIT - d.countdown) / DISCORD_WAIT) * 100}%` }}
-              />
-            )}
-          </button>
-        )}
       </div>
     </div>
   );
@@ -252,7 +205,7 @@ const PrimaryButton = ({ children, ...props }) => (
 /* ---------- Page ---------- */
 export default function KeyPage() {
   const [tab, setTab] = useState('get');
-  const [duration, setDuration] = useState(24);
+  const [duration, setDuration] = useState(6);
   const [provider, setProvider] = useState(() => {
     const saved = store.get('bokhub_provider');
     return AVAILABLE_PROVIDERS.includes(saved) ? saved : AVAILABLE_PROVIDERS[0];
@@ -260,19 +213,12 @@ export default function KeyPage() {
   const [keys, setKeys] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [redirectUrl, setRedirectUrl] = useState(''); // provider link as a fallback if the automatic redirect fails
+  const [redirectUrl, setRedirectUrl] = useState('');
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [copied, setCopied] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  // Join Discord step (24-hour keys only)
-  const [discordDone, setDiscordDone] = useState(() => {
-    try { return JSON.parse(store.get('bokhub_discord_done') || '[]'); } catch { return []; }
-  });
-  const [discordKey, setDiscordKey] = useState(null);
-  const [discordCount, setDiscordCount] = useState(null);
 
   // Check key
   const [checkInput, setCheckInput] = useState('');
@@ -302,7 +248,6 @@ export default function KeyPage() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Failed to load keys');
 
-    // Ready keys go to the bottom
     const sorted = [...(data.keys || [])].sort((a, b) => {
       if (a.status === 'ready' && b.status !== 'ready') return 1;
       if (a.status !== 'ready' && b.status === 'ready') return -1;
@@ -362,8 +307,6 @@ export default function KeyPage() {
     init();
   }, []);
 
-  // When the user presses Back from the provider, the browser may restore the page with loading=true.
-  // Reset it so the button doesn't stay locked forever.
   useEffect(() => {
     const onShow = (e) => {
       if (e.persisted) setLoading(false);
@@ -371,29 +314,6 @@ export default function KeyPage() {
     window.addEventListener('pageshow', onShow);
     return () => window.removeEventListener('pageshow', onShow);
   }, []);
-
-  const startDiscord = (keyString) => {
-    if (discordCount !== null) return;
-    setDiscordKey(keyString);
-    setDiscordCount(DISCORD_WAIT);
-  };
-
-  useEffect(() => {
-    if (discordCount === null) return;
-    if (discordCount <= 0) {
-      const next = [...new Set([...discordDone, discordKey])];
-      setDiscordDone(next);
-      store.set('bokhub_discord_done', JSON.stringify(next));
-      setDiscordCount(null);
-      setDiscordKey(null);
-      showToast('Join Discord completed ✓');
-      const w = window.open(DISCORD_URL, '_blank', 'noopener');
-      if (!w) window.location.href = DISCORD_URL;
-      return;
-    }
-    const t = setTimeout(() => setDiscordCount((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [discordCount]);
 
   const generateKey = async () => {
     setLoading(true);
@@ -459,7 +379,6 @@ export default function KeyPage() {
       console.log('redirectUrl:', data.redirectUrl);
       setRedirectUrl(data.redirectUrl);
       window.location.assign(data.redirectUrl);
-      // Just in case: if we're still on this page 4 seconds later, unlock the button again
       setTimeout(() => setLoading(false), 4000);
     } catch (e) {
       clearTimeout(timeoutId);
@@ -518,23 +437,19 @@ export default function KeyPage() {
     setTimeout(() => setCopied(''), 1800);
   };
 
-  const isReadyKey = (k) => k.status === 'ready' && (!hasDiscordStep(k.durationHours) || discordDone.includes(k.key));
-  const progressOf = (k) => {
-    const d = hasDiscordStep(k.durationHours);
-    return {
-      done: k.checkpointsCompleted + (d && discordDone.includes(k.key) ? 1 : 0),
-      total: k.checkpointsRequired + (d ? 1 : 0),
-    };
-  };
+  const isReadyKey = (k) => k.status === 'ready';
+  const progressOf = (k) => ({
+    done: k.checkpointsCompleted || 0,
+    total: k.checkpointsRequired || CHECKPOINTS_BY_DURATION[Number(k.durationHours)] || 2,
+  });
 
   const current = keys.find((k) => k.key === selected) || null;
   const ready = current ? isReadyKey(current) : false;
-  const hasDiscord = current ? hasDiscordStep(current.durationHours) : false;
   const providersDone = current ? current.checkpointsCompleted >= current.checkpointsRequired : false;
-  const currentProgress = current ? progressOf(current) : { done: 0, total: 1 };
+  const currentProgress = current ? progressOf(current) : { done: 0, total: 2 };
   const percent = Math.round((currentProgress.done / currentProgress.total) * 100);
   const canCreate = keys.length < MAX_KEYS;
-  const previewTotal = durations.indexOf(Number(duration)) + 1;
+  const previewTotal = CHECKPOINTS_BY_DURATION[Number(duration)] ?? 2;
   const deviceText = (n, max) => `${n}/${max === 0 ? '∞' : max} devices`;
 
   return (
@@ -577,18 +492,27 @@ export default function KeyPage() {
                 <p className="text-sm text-gray-400 mb-8">Choose a duration, then complete the checkpoints to unlock your BOKHUB key.</p>
 
                 <label className="block text-sm font-semibold mb-3">Key duration</label>
-                <div className="grid grid-cols-5 gap-2 mb-8">
-                  {durations.map((d, i) => (
-                    <button key={d} onClick={() => setDuration(d)} className={`flex flex-col items-center py-3 rounded-lg border transition-colors ${duration === d ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white' : 'border-white/10 text-gray-400 hover:border-white/30'}`}>
-                      <span className="text-sm font-semibold">{d} hrs</span>
-                      <span className="text-[10px] text-gray-500 mt-0.5">{i + 1 + (d === DISCORD_DURATION ? 1 : 0)} CP</span>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-2 mb-8">
+                  {durations.map((d) => {
+                    const cp = CHECKPOINTS_BY_DURATION[d] ?? 2;
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => setDuration(d)}
+                        className={`flex flex-col items-center py-3 rounded-lg border transition-colors ${
+                          duration === d ? 'border-[#8bff5e] bg-[#8bff5e]/5 text-white' : 'border-white/10 text-gray-400 hover:border-white/30'
+                        }`}
+                      >
+                        <span className="text-sm font-semibold">{d} hrs</span>
+                        <span className="text-[10px] text-gray-500 mt-0.5">{cp} CP</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <label className="block text-sm font-semibold mb-3">Provider</label>
                 <div className="mb-8"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
-                <div className="mb-8"><CheckpointPlan total={previewTotal} provider={provider} discord={{ enabled: Number(duration) === DISCORD_DURATION }} /></div>
+                <div className="mb-8"><CheckpointPlan total={previewTotal} provider={provider} /></div>
 
                 <PrimaryButton onClick={generateKey} disabled={loading || !canCreate}>{loading ? 'Processing...' : canCreate ? 'Create key now' : `Active key limit reached (${MAX_KEYS})`}</PrimaryButton>
                 <p className="text-[11px] text-gray-500 mt-3 text-center">{keys.length}/{MAX_KEYS} active keys</p>
@@ -658,7 +582,7 @@ export default function KeyPage() {
                         )}
 
                         <div className="mb-6">
-                          <CheckpointPlan total={current.checkpointsRequired} completed={current.checkpointsCompleted} provider={provider} allDone={ready} discord={{ enabled: hasDiscord, done: discordDone.includes(current.key), countdown: discordKey === current.key ? discordCount : null, unlocked: providersDone, onClick: () => startDiscord(current.key) }} />
+                          <CheckpointPlan total={current.checkpointsRequired} completed={current.checkpointsCompleted} provider={provider} allDone={ready} />
                         </div>
 
                         {!ready && !providersDone && (
@@ -673,10 +597,6 @@ export default function KeyPage() {
                               </p>
                             )}
                           </>
-                        )}
-
-                        {!ready && providersDone && hasDiscord && (
-                          <p className="text-xs text-gray-400 text-center">{discordKey === current.key && discordCount !== null ? `Discord will open in ${discordCount} seconds. Stay on this page.` : 'One step left: click "Join Discord" above.'}</p>
                         )}
                       </div>
                     )}
