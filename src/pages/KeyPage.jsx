@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { API } from '../utils/api';
 
 const MAX_KEYS = 3;
-const durations = [6, 12, 24];
+const durations = [6, 12, 24, 48];
 const CHECKPOINTS_BY_DURATION = {
   6: 2,
   12: 3,
   24: 4,
+  48: 6,
 };
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
