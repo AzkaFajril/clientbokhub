@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:3000/',
+          target: env.VITE_API_URL || 'https://serverbokhub-kpbp.vercel.app',
           changeOrigin: true,
         }
       }
