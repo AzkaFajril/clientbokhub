@@ -5,8 +5,8 @@ import { API } from '../utils/api';
 const MAX_KEYS = 3;
 const durations = [6, 12, 24, 48];
 const CHECKPOINTS_BY_DURATION = {
-  6: 2,
-  12: 3,
+  6: 1,
+  12: 2,
   24: 4,
   48: 6,
 };
