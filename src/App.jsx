@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
@@ -8,9 +8,16 @@ import ResetPage from './pages/ResetPage';
 import AdminPage from './pages/AdminPage';
 
 export default function App() {
+  const location = useLocation();
+  
+  // Cek apakah sedang di halaman admin
+  const isAdminPage = location.pathname === '/admin';
+
   return (
     <div className="min-h-screen flex flex-col bg-bok-bg text-white">
-      <Navbar />
+      {/* Sembunyikan Navbar jika di halaman admin */}
+      {!isAdminPage && <Navbar />}
+      
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -22,7 +29,9 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      <Footer />
+      
+      {/* Sembunyikan Footer juga jika di halaman admin (opsional) */}
+      {!isAdminPage && <Footer />}
     </div>
   );
 }

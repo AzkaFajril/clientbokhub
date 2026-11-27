@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 import { API } from '../utils/api';
 
 const MAX_KEYS = 3;
-const durations = [6, 12];
+const durations = [6, 12, 24];
 const CHECKPOINTS_BY_DURATION = {
   6: 2,
   12: 3,
+  24: 4,
 };
 const LOADER = `loadstring(game:HttpGet("https://raw.githubusercontent.com/AzkaFajril/123123213/refs/heads/main/rbx.lua"))()`;
 const DISCORD_URL = 'https://discord.gg/8qh4UsmVkx';
@@ -21,6 +22,19 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
+
+// Token klaim manual (hanya dipakai kalau server memakai link fallback).
+// Disimpan di localStorage supaya tetap ada setelah halaman dimuat ulang.
+const FALLBACK_STORE_KEY = 'bokhub_fallback_tokens';
+const loadFallbackTokens = () => {
+  try {
+    const parsed = JSON.parse(store.get(FALLBACK_STORE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+const saveFallbackTokens = (obj) => store.set(FALLBACK_STORE_KEY, JSON.stringify(obj));
 
 const getClientId = () => {
   let id = store.get('bokhub_client_id');
@@ -46,7 +60,7 @@ const Svg = ({ className = 'w-4 h-4', children, sw = 2 }) => (
 );
 const CheckIcon = ({ className }) => <Svg className={className} sw={3}><path d="M5 13l4 4L19 7" /></Svg>;
 const TrashIcon = ({ className }) => (
-  <Svg className}>
+  <Svg className={className}>
     <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </Svg>
 );
@@ -217,6 +231,9 @@ export default function KeyPage() {
   const [copied, setCopied] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // Token klaim manual per keyId (hanya terisi kalau server memakai link fallback)
+  const [fallbackTokens, setFallbackTokens] = useState(loadFallbackTokens);
+
   // Check key
   const [checkInput, setCheckInput] = useState('');
   const [checkResult, setCheckResult] = useState(null);
@@ -238,6 +255,16 @@ export default function KeyPage() {
   const switchTab = (t) => {
     setTab(t);
     setError('');
+  };
+
+  const setFallbackToken = (id, token) => {
+    setFallbackTokens((cur) => {
+      const next = { ...cur };
+      if (token) next[id] = token;
+      else delete next[id];
+      saveFallbackTokens(next);
+      return next;
+    });
   };
 
   const loadKeys = async (preferredId) => {
@@ -266,43 +293,37 @@ export default function KeyPage() {
     ran.current = true;
 
     const init = async () => {
-      const success = searchParams.get('checkpoint_success');
-      const paramKeyId = searchParams.get('keyId');
+      const fromCheckpoint = searchParams.get('checkpoint_success') === 'true';
+      const targetId = searchParams.get('keyId');
       const token = searchParams.get('token');
 
+      // Bersihkan parameter dari URL secepatnya supaya token tidak tertinggal di history/refresh
+      if (fromCheckpoint || targetId || token) setSearchParams({}, { replace: true });
+
       try {
-        if (success === 'true' && token) {
+        if (fromCheckpoint && targetId && token) {
           setTab('mine');
-          try {
-            const list = await loadKeys(paramKeyId);
-            const targetId =
-              paramKeyId ||
-              store.get('bokhub_pending_key_id') ||
-              getItemId(list.find((k) => k.status !== 'ready') || list[0]);
 
-            if (!targetId) {
-              throw new Error('Active key not found for this checkpoint');
-            }
+          const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ token }),
+          });
+          const data = await res.json().catch(() => ({}));
 
-            const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ token }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || 'Checkpoint rejected');
-
-            store.set('bokhub_pending_key_id', '');
+          if (res.ok) {
+            setFallbackToken(targetId, null);
             showToast(
               data.status === 'ready'
                 ? 'All checkpoints completed! Your key is ready.'
                 : `Checkpoint ${data.checkpointsCompleted} completed ✓`
             );
-            await loadKeys(targetId);
-          } catch (e) {
-            setError(e.message);
+          } else {
+            setError(data.error || 'Checkpoint gagal');
           }
-          setSearchParams({}, { replace: true });
+
+          // Selalu muat ulang daftar key, berhasil atau tidak
+          await loadKeys(targetId);
         } else {
           const list = await loadKeys();
           if (list.length > 0) setTab('mine');
@@ -314,6 +335,7 @@ export default function KeyPage() {
       }
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -357,6 +379,7 @@ export default function KeyPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to delete key');
       }
+      setFallbackToken(deleteTarget, null);
       showToast('Key deleted successfully');
       setDeleteTarget(null);
       await loadKeys();
@@ -391,6 +414,11 @@ export default function KeyPage() {
       if (!res.ok || !data.redirectUrl) {
         throw new Error(data.error || `Failed to get checkpoint link (${res.status})`);
       }
+
+      // Server memakai link fallback: simpan token untuk klaim manual setelah kembali
+      if (data.fallback && data.token) setFallbackToken(targetId, data.token);
+      else setFallbackToken(targetId, null);
+
       setRedirectUrl(data.redirectUrl);
       window.location.assign(data.redirectUrl);
       setTimeout(() => setLoading(false), 4000);
@@ -398,6 +426,38 @@ export default function KeyPage() {
       clearTimeout(timeoutId);
       if (e.name === 'AbortError') setError('Connection timed out. Please try again.');
       else setError(e.message);
+      setLoading(false);
+    }
+  };
+
+  // Klaim manual: hanya tersedia kalau ada token fallback untuk key ini
+  const claimCheckpoint = async (keyItem) => {
+    const targetId = getItemId(keyItem);
+    if (!targetId) return;
+    const token = fallbackTokens[targetId];
+    if (!token) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Checkpoint gagal');
+
+      setFallbackToken(targetId, null);
+      showToast(
+        data.status === 'ready'
+          ? 'All checkpoints completed! Your key is ready.'
+          : `Checkpoint ${data.checkpointsCompleted} completed ✓`
+      );
+      await loadKeys(targetId);
+    } catch (e) {
+      setError(e.message);
+    } finally {
       setLoading(false);
     }
   };
@@ -466,6 +526,7 @@ export default function KeyPage() {
   const canCreate = keys.length < MAX_KEYS;
   const previewTotal = CHECKPOINTS_BY_DURATION[Number(duration)] ?? 2;
   const deviceText = (n, max) => `${n}/${max === 0 ? '∞' : max} devices`;
+  const canManualClaim = current ? !!fallbackTokens[getItemId(current)] : false;
 
   return (
     <div className="min-h-screen bg-[#060b10] text-white">
@@ -507,7 +568,7 @@ export default function KeyPage() {
                 <p className="text-sm text-gray-400 mb-8">Choose a duration, then complete the checkpoints to unlock your BOKHUB key.</p>
 
                 <label className="block text-sm font-semibold mb-3">Key duration</label>
-                <div className="grid grid-cols-2 gap-2 mb-8">
+                <div className="grid grid-cols-3 gap-2 mb-8">
                   {durations.map((d) => {
                     const cp = CHECKPOINTS_BY_DURATION[d] ?? 2;
                     return (
@@ -604,12 +665,34 @@ export default function KeyPage() {
                         {!ready && !providersDone && (
                           <>
                             <div className="mb-3"><ProviderPicker provider={provider} onChange={changeProvider} /></div>
-                            <PrimaryButton onClick={() => goToProvider(current)} disabled={loading}>{loading ? 'Redirecting...' : `Complete checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}</PrimaryButton>
-                            <p className="text-[11px] text-gray-500 mt-3 text-center">You will be redirected to {provider} and automatically brought back to this page when you are done.</p>
+
+                            {/* Pergi ke checkpoint. Setelah selesai, user otomatis kembali ke halaman ini
+                                dan checkpoint langsung terhitung (token ada di URL). */}
+                            <PrimaryButton onClick={() => goToProvider(current)} disabled={loading}>
+                              {loading ? 'Redirecting...' : `Pergi ke Checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}
+                            </PrimaryButton>
+
+                            {/* Klaim manual: hanya muncul kalau server memakai link fallback */}
+                            {canManualClaim && (
+                              <button
+                                onClick={() => claimCheckpoint(current)}
+                                disabled={loading}
+                                className="w-full mt-3 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {loading ? 'Memproses...' : 'Saya sudah selesai (Klaim Checkpoint)'}
+                              </button>
+                            )}
+
+                            <p className="text-[11px] text-gray-500 mt-3 text-center">
+                              {canManualClaim
+                                ? 'Link utama sedang bermasalah, jadi dipakai link cadangan. Setelah selesai, kembali ke halaman ini lalu klik "Klaim Checkpoint".'
+                                : 'Selesaikan semua langkah di halaman iklan. Setelah selesai kamu akan otomatis kembali ke halaman ini dan checkpoint langsung terhitung.'}
+                            </p>
+
                             {redirectUrl && (
                               <p className="text-[11px] text-gray-400 mt-2 text-center">
-                                Not redirecting automatically?{' '}
-                                <a href={redirectUrl} className="text-[#8bff5e] underline">Click here</a>
+                                Tidak terarah otomatis?{' '}
+                                <a href={redirectUrl} className="text-[#8bff5e] underline">Klik di sini</a>
                               </p>
                             )}
                           </>
