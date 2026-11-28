@@ -24,8 +24,9 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
-// Token klaim manual (hanya dipakai kalau server memakai link fallback).
-// Disimpan di localStorage supaya tetap ada setelah halaman dimuat ulang.
+// Token klaim manual. Disimpan di localStorage supaya tetap ada setelah halaman dimuat ulang.
+// Dipakai untuk: (1) link fallback dari server, (2) retry kalau klaim otomatis gagal sementara
+// (mis. "terlalu cepat" atau jaringan putus).
 const FALLBACK_STORE_KEY = 'bokhub_fallback_tokens';
 const loadFallbackTokens = () => {
   try {
@@ -36,6 +37,10 @@ const loadFallbackTokens = () => {
   }
 };
 const saveFallbackTokens = (obj) => store.set(FALLBACK_STORE_KEY, JSON.stringify(obj));
+
+// Hanya error "terlalu cepat" yang boleh dicoba lagi dengan token yang sama.
+// Error lain (token tidak valid, kedaluwarsa, dll) berarti token sudah mati.
+const isRetryableError = (msg = '') => /terlalu cepat/i.test(msg);
 
 const getClientId = () => {
   let id = store.get('bokhub_client_id');
@@ -232,7 +237,7 @@ export default function KeyPage() {
   const [copied, setCopied] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  // Token klaim manual per keyId (hanya terisi kalau server memakai link fallback)
+  // Token klaim manual per keyId (link fallback, atau retry setelah klaim otomatis gagal sementara)
   const [fallbackTokens, setFallbackTokens] = useState(loadFallbackTokens);
 
   // Check key
@@ -298,29 +303,43 @@ export default function KeyPage() {
       const targetId = searchParams.get('keyId');
       const token = searchParams.get('token');
 
-      // Bersihkan parameter dari URL secepatnya supaya token tidak tertinggal di history/refresh
+      // Bersihkan parameter dari URL secepatnya. Token disimpan dulu ke localStorage di bawah,
+      // jadi kalau klaim gagal sementara tokennya tidak hilang.
       if (fromCheckpoint || targetId || token) setSearchParams({}, { replace: true });
 
       try {
         if (fromCheckpoint && targetId && token) {
           setTab('mine');
 
-          const res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ token }),
-          });
-          const data = await res.json().catch(() => ({}));
+          // Simpan token SEBELUM klaim supaya bisa dicoba lagi lewat tombol "Klaim Checkpoint"
+          setFallbackToken(targetId, token);
 
-          if (res.ok) {
+          let res = null;
+          let data = {};
+          try {
+            res = await fetch(`${API}/keys/${encodeURIComponent(targetId)}/checkpoint`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ token }),
+            });
+            data = await res.json().catch(() => ({}));
+          } catch {
+            // Jaringan putus: token tetap tersimpan untuk klaim ulang
+            setError('Koneksi bermasalah. Klik "Klaim Checkpoint" untuk mencoba lagi.');
+          }
+
+          if (res && res.ok) {
             setFallbackToken(targetId, null);
             showToast(
               data.status === 'ready'
                 ? 'All checkpoints completed! Your key is ready.'
                 : `Checkpoint ${data.checkpointsCompleted} completed ✓`
             );
-          } else {
-            setError(data.error || 'Checkpoint gagal');
+          } else if (res) {
+            const msg = data.error || 'Checkpoint gagal';
+            setError(msg);
+            // Token sudah mati -> hapus supaya tombol klaim tidak muncul percuma
+            if (!isRetryableError(msg)) setFallbackToken(targetId, null);
           }
 
           // Selalu muat ulang daftar key, berhasil atau tidak
@@ -431,7 +450,7 @@ export default function KeyPage() {
     }
   };
 
-  // Klaim manual: hanya tersedia kalau ada token fallback untuk key ini
+  // Klaim manual: tersedia kalau ada token tersimpan untuk key ini
   const claimCheckpoint = async (keyItem) => {
     const targetId = getItemId(keyItem);
     if (!targetId) return;
@@ -447,7 +466,13 @@ export default function KeyPage() {
         body: JSON.stringify({ token }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Checkpoint gagal');
+
+      if (!res.ok) {
+        const msg = data.error || 'Checkpoint gagal';
+        // Token mati -> hapus; "terlalu cepat" -> biarkan, user tinggal klik lagi
+        if (!isRetryableError(msg)) setFallbackToken(targetId, null);
+        throw new Error(msg);
+      }
 
       setFallbackToken(targetId, null);
       showToast(
@@ -673,7 +698,7 @@ export default function KeyPage() {
                               {loading ? 'Redirecting...' : `Pergi ke Checkpoint ${current.checkpointsCompleted + 1}/${current.checkpointsRequired}`}
                             </PrimaryButton>
 
-                            {/* Klaim manual: hanya muncul kalau server memakai link fallback */}
+                            {/* Klaim manual: muncul kalau ada token tersimpan (link fallback / klaim otomatis gagal sementara) */}
                             {canManualClaim && (
                               <button
                                 onClick={() => claimCheckpoint(current)}
@@ -686,7 +711,7 @@ export default function KeyPage() {
 
                             <p className="text-[11px] text-gray-500 mt-3 text-center">
                               {canManualClaim
-                                ? 'Link utama sedang bermasalah, jadi dipakai link cadangan. Setelah selesai, kembali ke halaman ini lalu klik "Klaim Checkpoint".'
+                                ? 'Checkpoint belum terhitung. Tunggu beberapa detik, lalu klik "Klaim Checkpoint". Kalau tetap gagal, klik "Pergi ke Checkpoint" lagi.'
                                 : 'Selesaikan semua langkah di halaman iklan. Setelah selesai kamu akan otomatis kembali ke halaman ini dan checkpoint langsung terhitung.'}
                             </p>
 
